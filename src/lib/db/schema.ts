@@ -459,6 +459,24 @@ export const auditLogs = pgTable("audit_logs", {
   index("audit_entity_idx").on(t.entity, t.entityId),
 ]);
 
+export const otpCodes = pgTable("otp_codes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  phone: varchar("phone", { length: 20 }).notNull(),
+  codeHash: varchar("code_hash", { length: 255 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  consumed: boolean("consumed").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [index("otp_phone_idx").on(t.phone), index("otp_expires_idx").on(t.expiresAt)]);
+
+export const sessions = pgTable("sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token: varchar("token", { length: 512 }).notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [index("sessions_user_idx").on(t.userId), index("sessions_token_idx").on(t.token)]);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Society = typeof societies.$inferSelect;
@@ -480,6 +498,8 @@ export type HelpdeskTicket = typeof helpdeskTickets.$inferSelect;
 export type Announcement = typeof announcements.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type OtpCode = typeof otpCodes.$inferSelect;
+export type Session = typeof sessions.$inferSelect;
 
 export const societiesRelations = relations(societies, ({ many }) => ({
   buildings: many(buildings),
