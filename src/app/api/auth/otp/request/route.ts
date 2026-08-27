@@ -39,6 +39,7 @@ export async function POST(req: Request) {
     await db.insert(otpCodes).values({ phone: clean, codeHash: hash, expiresAt: new Date(now + 5 * 60 * 1000) });
     const provider = getOtpProvider();
     await provider.request(clean, code);
+    try { await db.insert((await import("@/lib/db/schema")).auditLogs).values({ action: "otp:request", entity: "otp", entityId: null, newState: { phone: clean.slice(-4).padStart(clean.length,"*"), success: true } }); } catch {}
     return NextResponse.json({ success: true });
   } catch (e: any) {
     return NextResponse.json({ error: "Failed to send OTP" }, { status: 500 });
