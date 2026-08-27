@@ -9,7 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Shield, Clock, Building2, Users, LogIn, LogOut, Search, UserPlus, QrCode, Phone, MapPin, AlertTriangle } from "lucide-react";
+import { Shield, Clock, Building2, Users, LogIn, LogOut, Search, UserPlus, QrCode, Phone, MapPin, AlertTriangle, Package } from "lucide-react";
 
 export default function GuardConsole() {
   const [society, setSociety] = useState<any>(null);
@@ -26,13 +26,17 @@ export default function GuardConsole() {
   const [residentQuery, setResidentQuery] = useState("");
   const [residentResults, setResidentResults] = useState<any[]>([]);
   const [tab, setTab] = useState("verify");
+  const [deliveries, setDeliveries] = useState<any[]>([]);
+  const [deliveryForm, setDeliveryForm] = useState({ courierName:"", awb:"", unitId:"" });
+  const [deliveryQuery, setDeliveryQuery] = useState("");
+  const [deliveryResults, setDeliveryResults] = useState<any[]>([]);
 
   useEffect(()=>{
     const t = setInterval(()=>setTime(new Date()), 1000);
     fetch("/api/auth/me").then(r=>r.json()).then(d=> setGuard(d.user)).catch(()=>{});
     fetch("/api/societies").then(r=>r.json()).then(d=> setSociety(Array.isArray(d)? d[0]: null)).catch(()=>{});
     fetch("/api/gates").then(r=>r.json()).then(d=>{ if(Array.isArray(d)){ setGates(d); if(d[0]) setSelectedGate(d[0].id); }}).catch(()=>{});
-    loadExpected(); loadInside();
+    loadExpected(); loadInside(); loadDeliveries();
     const saved = localStorage.getItem("guard_gate");
     if (saved) setSelectedGate(saved);
     return ()=>clearInterval(t);
@@ -42,6 +46,7 @@ export default function GuardConsole() {
 
   async function loadExpected(){ fetch("/api/guard/expected").then(r=>r.json()).then(d=> setExpected(Array.isArray(d)? d : [])).catch(()=>{}); }
   async function loadInside(){ fetch("/api/guard/inside").then(r=>r.json()).then(d=> setInside(Array.isArray(d)? d : [])).catch(()=>{}); }
+  async function loadDeliveries(){ fetch("/api/deliveries").then(r=>r.json()).then(d=> setDeliveries(Array.isArray(d)? d : [])).catch(()=>{}); }
 
   async function verify(){
     if (!code.trim()) return toast.error("Enter pass code");
@@ -77,6 +82,18 @@ export default function GuardConsole() {
     const d = await res.json();
     if (!res.ok) toast.error(d.error||"Walk-in failed"); else { toast.success(`Walk-in: ${d.entry.id.slice(0,8)} checked in`); setWalkin({ visitorName:"", phone:"", purpose:"Guest", unitId:""}); loadInside(); }
   }
+  async function searchDeliveryUnit(){
+    if (deliveryQuery.length<2) return;
+    const res = await fetch(`/api/guard/resident-search?q=${encodeURIComponent(deliveryQuery)}`);
+    const d = await res.json();
+    setDeliveryResults(Array.isArray(d)? d : []);
+  }
+  async function recordDelivery(){
+    if (!deliveryForm.courierName || !deliveryForm.unitId) return toast.error("Enter courier and unit");
+    const res = await fetch("/api/deliveries", { method:"POST", headers:{ "Content-Type":"application/json"}, body: JSON.stringify({ courierName: deliveryForm.courierName, awb: deliveryForm.awb || undefined, unitId: deliveryForm.unitId }) });
+    const d = await res.json();
+    if (!res.ok) toast.error(d.error||"Failed"); else { toast.success(`Delivery for ${d.courierName} recorded`); setDeliveryForm({ courierName:"", awb:"", unitId:""}); setDeliveryQuery(""); setDeliveryResults([]); loadDeliveries(); }
+  }
 
   return (
     <AppShell>
@@ -98,10 +115,11 @@ export default function GuardConsole() {
         </div>
 
         <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 h-10">
+          <TabsList className="grid w-full grid-cols-5 h-10">
             <TabsTrigger value="verify" className="text-xs">Verify</TabsTrigger>
             <TabsTrigger value="expected" className="text-xs">Expected {expected.length>0 && <Badge className="ml-1 px-1">{expected.length}</Badge>}</TabsTrigger>
             <TabsTrigger value="inside" className="text-xs">Inside {inside.length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{inside.length}</Badge>}</TabsTrigger>
+            <TabsTrigger value="deliveries" className="text-xs">Deliveries {deliveries.filter((d:any)=>d.status==="AT_GATE").length>0 && <Badge className="ml-1 px-1 bg-amber-600">{deliveries.filter((d:any)=>d.status==="AT_GATE").length}</Badge>}</TabsTrigger>
             <TabsTrigger value="walkin" className="text-xs">Walk-in</TabsTrigger>
           </TabsList>
 
@@ -188,6 +206,52 @@ export default function GuardConsole() {
                         <p className="text-xs text-muted-foreground">In since {new Date(it.entry.checkIn).toLocaleTimeString()} • {Math.floor((Date.now() - new Date(it.entry.checkIn).getTime())/60000)} min</p>
                       </div>
                       <Button size="sm" variant="outline" className="h-10" onClick={()=>checkOut(it.entry.id)}><LogOut className="h-4 w-4 mr-1" />Check out</Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="deliveries" className="space-y-4 mt-4">
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Package className="h-4 w-4" />Record Delivery at Gate</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label>Courier / Provider *</Label><Input value={deliveryForm.courierName} onChange={e=>setDeliveryForm({...deliveryForm, courierName:e.target.value})} placeholder="Amazon, Flipkart, BlueDart" /></div>
+                  <div className="space-y-1"><Label>AWB / Tracking (optional)</Label><Input value={deliveryForm.awb} onChange={e=>setDeliveryForm({...deliveryForm, awb:e.target.value})} placeholder="AWB123456" /></div>
+                </div>
+                <div className="space-y-1"><Label>Destination Unit *</Label><Input value={deliveryForm.unitId} onChange={e=>setDeliveryForm({...deliveryForm, unitId:e.target.value})} placeholder="Unit ID or search below" className="font-mono text-xs" /></div>
+                <div className="flex gap-2">
+                  <Input value={deliveryQuery} onChange={e=>setDeliveryQuery(e.target.value)} placeholder="Search unit e.g. A-101" className="flex-1" />
+                  <Button type="button" variant="outline" onClick={searchDeliveryUnit}><Search className="h-4 w-4 mr-1" />Find</Button>
+                </div>
+                {deliveryResults.length>0 && (
+                  <div className="rounded-lg border divide-y max-h-40 overflow-auto">
+                    {deliveryResults.map((r:any)=>(
+                      <button key={r.unit.id} onClick={()=>setDeliveryForm({...deliveryForm, unitId: r.unit.id})} className="w-full text-left px-3 py-2 hover:bg-muted flex justify-between">
+                        <span className="text-sm font-medium">{r.unit.number} • {r.residents[0]?.user?.fullName || "Resident"}</span>
+                        <span className="text-xs text-muted-foreground">{r.unit.type}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <Button onClick={recordDelivery} className="w-full h-12 text-base"><Package className="mr-2 h-5 w-5" />Record Delivery</Button>
+                <p className="text-xs text-muted-foreground">Creates notification for all residents of the unit. Status AT_GATE → resident collects.</p>
+              </CardContent>
+            </Card>
+            <div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Recent Deliveries</h2><Button variant="ghost" size="sm" onClick={loadDeliveries}>Refresh</Button></div>
+            {deliveries.length===0 ? <Card><CardContent className="py-8 text-center"><Package className="h-8 w-8 mx-auto text-muted-foreground" /><p className="text-sm font-medium mt-2">No deliveries yet</p></CardContent></Card> : (
+              <div className="space-y-2">
+                {deliveries.slice(0,10).map((d:any)=>(
+                  <Card key={d.id} className="border-l-4 border-l-amber-500">
+                    <CardContent className="p-3 flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-semibold">{d.courierName}</p>
+                        <p className="text-xs text-muted-foreground">{d.awb || "No AWB"} • {new Date(d.createdAt).toLocaleString()}</p>
+                        <p className="text-xs">Unit {d.unitId.slice(0,8)} • {d.status}</p>
+                      </div>
+                      <Badge variant={d.status==="AT_GATE" ? "default" : "secondary"} className={d.status==="AT_GATE" ? "bg-amber-600" : ""}>{d.status}</Badge>
                     </CardContent>
                   </Card>
                 ))}

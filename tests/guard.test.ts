@@ -73,15 +73,17 @@ async function run(){
   assert(res.status===500 || res.status===403, "6 forged unitId walk-in rejected");
 
   // 7 expired pass
-  const [visitorExp] = await db.insert(visitors).values({ name:"Expired", phone:"9000222222", societyId: A.soc.id }).returning();
-  const [inviteExp] = await db.insert(visitorInvites).values({ societyId: A.soc.id, unitId: A.unit.id, createdBy: A.userR.id, visitorId: visitorExp.id, code:"EXPIRED1", validFrom: new Date(Date.now()-86400000), validTo: new Date(Date.now()-3600000), status:"PENDING" }).returning();
-  res = await fetchWithCookie("/api/guard/verify", { method:"POST", body: JSON.stringify({ code:"EXPIRED1"}) }, A.cookieG);
+  const expCode = `EXP${Date.now().toString().slice(-4)}`;
+  const [visitorExp] = await db.insert(visitors).values({ name:"Expired", phone:`9000222${randomInt(100,999)}`, societyId: A.soc.id }).returning();
+  const [inviteExp] = await db.insert(visitorInvites).values({ societyId: A.soc.id, unitId: A.unit.id, createdBy: A.userR.id, visitorId: visitorExp.id, code: expCode, validFrom: new Date(Date.now()-86400000), validTo: new Date(Date.now()-3600000), status:"PENDING" }).returning();
+  res = await fetchWithCookie("/api/guard/verify", { method:"POST", body: JSON.stringify({ code: expCode}) }, A.cookieG);
   assert(res.status===409, "7 expired pass → 409");
 
   // 8 cancelled
-  const [visitorCan] = await db.insert(visitors).values({ name:"Cancelled", phone:"9000333333", societyId: A.soc.id }).returning();
-  const [inviteCan] = await db.insert(visitorInvites).values({ societyId: A.soc.id, unitId: A.unit.id, createdBy: A.userR.id, visitorId: visitorCan.id, code:"CANCEL1", validFrom: new Date(), validTo: new Date(Date.now()+86400000), status:"CANCELLED" }).returning();
-  res = await fetchWithCookie("/api/guard/verify", { method:"POST", body: JSON.stringify({ code:"CANCEL1"}) }, A.cookieG);
+  const canCode = `CAN${Date.now().toString().slice(-4)}`;
+  const [visitorCan] = await db.insert(visitors).values({ name:"Cancelled", phone:`9000333${randomInt(100,999)}`, societyId: A.soc.id }).returning();
+  const [inviteCan] = await db.insert(visitorInvites).values({ societyId: A.soc.id, unitId: A.unit.id, createdBy: A.userR.id, visitorId: visitorCan.id, code: canCode, validFrom: new Date(), validTo: new Date(Date.now()+86400000), status:"CANCELLED" }).returning();
+  res = await fetchWithCookie("/api/guard/verify", { method:"POST", body: JSON.stringify({ code: canCode}) }, A.cookieG);
   assert(res.status===409, "8 cancelled → 409");
 
   // 9 invalid code

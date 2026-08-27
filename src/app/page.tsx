@@ -19,6 +19,7 @@ export default function Dashboard() {
   const [bills, setBills] = useState<any[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [deliveries, setDeliveries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [auth, setAuth] = useState<boolean | null>(null);
 
@@ -29,13 +30,14 @@ export default function Dashboard() {
         if (!me.user) { setAuth(false); setLoading(false); return; }
         setUser(me.user);
         setAuth(true);
-        const [s, u, iv, b, t, a] = await Promise.all([
+        const [s, u, iv, b, t, a, d] = await Promise.all([
           fetch("/api/societies").then(r=>r.json()).catch(()=>[]),
           fetch("/api/units").then(r=>r.json()).catch(()=>[]),
           fetch("/api/invites").then(r=>r.json()).catch(()=>[]),
           fetch("/api/bills").then(r=>r.json()).catch(()=>[]),
           fetch("/api/tickets").then(r=>r.json()).catch(()=>[]),
           fetch("/api/announcements").then(r=>r.json()).catch(()=>[]),
+          fetch("/api/deliveries").then(r=>r.json()).catch(()=>[]),
         ]);
         setSociety(Array.isArray(s)? s[0] : null);
         setUnits(Array.isArray(u)? u : []);
@@ -43,6 +45,7 @@ export default function Dashboard() {
         setBills(Array.isArray(b)? b : []);
         setTickets(Array.isArray(t)? t : []);
         setAnnouncements(Array.isArray(a)? a : []);
+        setDeliveries(Array.isArray(d)? d : []);
       } catch { setAuth(false); }
       finally { setLoading(false); }
     }
@@ -67,6 +70,7 @@ export default function Dashboard() {
 
   const pendingBills = bills.filter(b=>b.status!=="PAID").length;
   const openTickets = tickets.filter(t=>t.status==="OPEN").length;
+  const pendingDeliveries = deliveries.filter((d:any)=>d.status==="AT_GATE").length;
   const myUnit = units[0];
 
   return (
@@ -97,6 +101,15 @@ export default function Dashboard() {
           <StatCard label="Helpdesk open" value={openTickets} sub={openTickets? "Needs attention" : "No open tickets"} icon={<Wrench className="h-4 w-4" />} />
         </div>
 
+        {pendingDeliveries>0 && (
+          <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+            <CardContent className="py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2"><Truck className="h-4 w-4 text-amber-700" /><div><p className="text-sm font-semibold">{pendingDeliveries} delivery{pendingDeliveries>1?"ies":""} ready for pickup</p><p className="text-xs text-muted-foreground">At gate • Collect soon</p></div></div>
+              <Link href="/deliveries"><Button size="sm" variant="outline">View</Button></Link>
+            </CardContent>
+          </Card>
+        )}
+
         <section aria-labelledby="quick-actions">
           <SectionHeader title="Quick actions" description="Frequent tasks — tap to start" />
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -105,7 +118,7 @@ export default function Dashboard() {
               { label: "View Bills", icon: CreditCard, href: "/bills", desc: `${pendingBills} due` },
               { label: "Book Amenity", icon: Calendar, href: "/amenities", desc: "Pool • Gym" },
               { label: "Helpdesk", icon: Wrench, href: "/helpdesk", desc: "Raise ticket" },
-              { label: "Deliveries", icon: Truck, href: "/deliveries", desc: "At gate" },
+              { label: "Deliveries", icon: Truck, href: "/deliveries", desc: pendingDeliveries ? `${pendingDeliveries} ready` : "At gate" },
               { label: "Domestic Help", icon: HeartHandshake, href: "/help", desc: "Check-in" },
             ].map(a=>(
               <Link key={a.label} href={a.href} className="rounded-xl border bg-card p-4 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
