@@ -3,7 +3,7 @@ import { visitors, visitorInvites, units } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
-import { randomInt } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
 
@@ -38,11 +38,12 @@ export async function POST(req: Request) {
       }
       const [visitor] = await tx.insert(visitors).values({ name: parsed.data.name, phone: parsed.data.phone, societyId }).returning();
       const code = randomInt(100000, 1000000).toString().slice(0, 4).toUpperCase() + randomInt(10, 99).toString();
+      const qrToken = randomUUID().replace(/-/g,"").slice(0,16).toUpperCase();
       const validFrom = parsed.data.validFrom ? new Date(parsed.data.validFrom) : new Date();
       const validTo = parsed.data.validTo ? new Date(parsed.data.validTo) : parsed.data.visitDate ? new Date(parsed.data.visitDate) : new Date(Date.now() + 86400000);
       if (validTo <= validFrom) throw new Error("Valid until must be after valid from");
       const [invite] = await tx.insert(visitorInvites).values({
-        societyId, unitId, visitorId: visitor.id, createdBy: sess.userId, code, purpose: parsed.data.purpose, validFrom, validTo,
+        societyId, unitId, visitorId: visitor.id, createdBy: sess.userId, code, qrToken, purpose: parsed.data.purpose, validFrom, validTo,
       }).returning();
       return { visitor, invite, unitId };
     });
