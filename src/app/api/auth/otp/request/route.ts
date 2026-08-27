@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { otpCodes, users } from "@/lib/db/schema";
-import { eq, gt, and, sql } from "drizzle-orm";
+import { otpCodes } from "@/lib/db/schema";
+import { desc, gt, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { randomInt } from "crypto";
 import { getOtpProvider } from "@/lib/otp/provider";
-
-const cooldownMap = new Map<string, number>();
-const hourlyMap = new Map<string, number[]>();
 
 export async function POST(req: Request) {
   try {
@@ -16,19 +14,33 @@ export async function POST(req: Request) {
     }
     const clean = phone.replace(/\s/g, "");
     const now = Date.now();
-    const last = cooldownMap.get(clean) || 0;
-    if (now - last < 60000) return NextResponse.json({ error: "Resend cooldown 60s" }, { status: 429 });
-    const arr = (hourlyMap.get(clean) || []).filter(t => now - t < 3600000);
-    if (arr.length >= 3) return NextResponse.json({ error: "Rate limit 3/hr" }, { status: 429 });
-    arr.push(now); hourlyMap.set(clean, arr); cooldownMap.set(clean, now);
 
-    const code = process.env.OTP_PROVIDER === "mock" && process.env.MOCK_OTP_ENABLED === "true" ? "123456" : Math.floor(100000 + Math.random() * 900000).toString();
+    if (process.env.NODE_ENV === "production" && process.env.OTP_PROVIDER === "mock" && process.env.MOCK_OTP_ENABLED === "true") {
+      return NextResponse.json({ error: "Mock OTP not allowed in production" }, { status: 500 });
+    }
+
+    const recent = await db.select().from(otpCodes).where(gt(otpCodes.createdAt, new Date(now - 3600000))).then(rows => rows.filter(r => r.phone === clean));
+    const last = recent.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+    if (last && now - last.createdAt.getTime() < 60000) {
+      return NextResponse.json({ error: "Resend cooldown 60s" }, { status: 429 });
+    }
+    if (recent.length >= 3) {
+      return NextResponse.json({ error: "Rate limit 3/hr" }, { status: 429 });
+    }
+
+    const locked = recent.filter(r => r.attempts >= 5 && now - r.createdAt.getTime() < 15 * 60 * 1000);
+    if (locked.length > 0) {
+      return NextResponse.json({ error: "Too many attempts, locked 15 min" }, { status: 429 });
+    }
+
+    const isMock = process.env.OTP_PROVIDER === "mock" && process.env.MOCK_OTP_ENABLED === "true" && process.env.NODE_ENV !== "production";
+    const code = isMock ? "123456" : randomInt(100000, 1000000).toString();
     const hash = await bcrypt.hash(code, 10);
     await db.insert(otpCodes).values({ phone: clean, codeHash: hash, expiresAt: new Date(now + 5 * 60 * 1000) });
     const provider = getOtpProvider();
     await provider.request(clean, code);
-    return NextResponse.json({ success: true, mockOtp: process.env.OTP_PROVIDER === "mock" ? code : undefined });
+    return NextResponse.json({ success: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Failed" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to send OTP" }, { status: 500 });
   }
 }

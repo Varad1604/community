@@ -1,13 +1,33 @@
 export type Role = "SUPER_ADMIN"|"SOCIETY_ADMIN"|"RWA_MEMBER"|"ACCOUNTANT"|"FACILITY_MANAGER"|"SECURITY_MANAGER"|"GUARD"|"RESIDENT"|"FAMILY_MEMBER"|"VENDOR"|"SERVICE_PROVIDER"|"DOMESTIC_HELP";
 const perms: Record<string, Role[]> = {
-  "visitor:approve": ["SOCIETY_ADMIN","SECURITY_MANAGER","RESIDENT"],
-  "visitor:create": ["RESIDENT","FAMILY_MEMBER","SOCIETY_ADMIN","RWA_MEMBER"],
-  "bill:issue": ["SOCIETY_ADMIN","ACCOUNTANT"],
-  "payment:refund": ["SOCIETY_ADMIN","ACCOUNTANT"],
-  "admin:access": ["SOCIETY_ADMIN","RWA_MEMBER","ACCOUNTANT","FACILITY_MANAGER","SECURITY_MANAGER"],
+  "society:read": ["SUPER_ADMIN","SOCIETY_ADMIN","RWA_MEMBER","ACCOUNTANT","FACILITY_MANAGER","SECURITY_MANAGER","GUARD","RESIDENT","FAMILY_MEMBER"],
+  "society:manage": ["SUPER_ADMIN","SOCIETY_ADMIN"],
+  "society:delete": ["SUPER_ADMIN","SOCIETY_ADMIN"],
+  "unit:read": ["SUPER_ADMIN","SOCIETY_ADMIN","RWA_MEMBER","ACCOUNTANT","FACILITY_MANAGER","SECURITY_MANAGER","GUARD","RESIDENT","FAMILY_MEMBER"],
+  "unit:manage": ["SUPER_ADMIN","SOCIETY_ADMIN","RWA_MEMBER"],
+  "visitor:read": ["SUPER_ADMIN","SOCIETY_ADMIN","SECURITY_MANAGER","GUARD","RESIDENT","FAMILY_MEMBER"],
+  "visitor:create": ["RESIDENT","FAMILY_MEMBER","SOCIETY_ADMIN","RWA_MEMBER","SUPER_ADMIN"],
+  "visitor:approve": ["SOCIETY_ADMIN","SECURITY_MANAGER","RESIDENT","SUPER_ADMIN"],
+  "visitor:entry": ["SECURITY_MANAGER","GUARD","SUPER_ADMIN"],
+  "gate:manage": ["SOCIETY_ADMIN","SECURITY_MANAGER","SUPER_ADMIN"],
+  "gate:read": ["SOCIETY_ADMIN","SECURITY_MANAGER","GUARD","SUPER_ADMIN"],
+  "bill:read": ["SOCIETY_ADMIN","ACCOUNTANT","RESIDENT","FAMILY_MEMBER","SUPER_ADMIN"],
+  "bill:manage": ["SOCIETY_ADMIN","ACCOUNTANT","SUPER_ADMIN"],
+  "payment:read": ["SOCIETY_ADMIN","ACCOUNTANT","RESIDENT","FAMILY_MEMBER","SUPER_ADMIN"],
+  "payment:create": ["RESIDENT","FAMILY_MEMBER","SOCIETY_ADMIN","ACCOUNTANT","SUPER_ADMIN"],
+  "ticket:read": ["SOCIETY_ADMIN","RWA_MEMBER","FACILITY_MANAGER","RESIDENT","FAMILY_MEMBER","SUPER_ADMIN"],
+  "ticket:manage": ["SOCIETY_ADMIN","RWA_MEMBER","FACILITY_MANAGER","SUPER_ADMIN"],
+  "announcement:read": ["SUPER_ADMIN","SOCIETY_ADMIN","RWA_MEMBER","ACCOUNTANT","FACILITY_MANAGER","SECURITY_MANAGER","GUARD","RESIDENT","FAMILY_MEMBER"],
+  "announcement:manage": ["SOCIETY_ADMIN","RWA_MEMBER","SUPER_ADMIN"],
+  "amenity:read": ["SUPER_ADMIN","SOCIETY_ADMIN","FACILITY_MANAGER","RESIDENT","FAMILY_MEMBER"],
+  "amenity:manage": ["SOCIETY_ADMIN","FACILITY_MANAGER","SUPER_ADMIN"],
+  "audit:read": ["SUPER_ADMIN","SOCIETY_ADMIN"],
 };
 export function can(roles: Role[], action: string) {
   const allowed = perms[action];
   if (!allowed) return false;
   return roles.some(r => allowed.includes(r) || r === "SUPER_ADMIN");
+}
+export function canAny(roles: Role[], actions: string[]) {
+  return actions.some(a => can(roles, a));
 }

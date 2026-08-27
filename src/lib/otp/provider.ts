@@ -1,17 +1,17 @@
 export interface OtpProvider {
   request(phone: string, code: string): Promise<void>;
-  verify?(phone: string, code: string): Promise<boolean>;
 }
-
 export const mockProvider: OtpProvider = {
   async request(phone, code) {
-    if (process.env.NODE_ENV === "production" && process.env.MOCK_OTP_ENABLED === "true") {
+    if (process.env.NODE_ENV === "production") {
       throw new Error("Mock OTP forbidden in production");
     }
-    console.log(`[MOCK OTP] ${phone} => ${code}`);
+    if (process.env.MOCK_OTP_ENABLED !== "true") {
+      throw new Error("Mock OTP disabled");
+    }
+    console.log(`[MOCK OTP] ${phone} OTP generated (not logged)`);
   },
 };
-
 export const msg91Provider: OtpProvider = {
   async request(phone, code) {
     const key = process.env.MSG91_AUTH_KEY;
@@ -23,7 +23,6 @@ export const msg91Provider: OtpProvider = {
     });
   },
 };
-
 export function getOtpProvider(): OtpProvider {
   const p = process.env.OTP_PROVIDER || "mock";
   if (p === "msg91") return msg91Provider;
