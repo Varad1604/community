@@ -1,95 +1,196 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useSocieties } from "@/hooks/use-societies";
-import { useUnits } from "@/hooks/use-units";
-import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { AppShell } from "@/components/shared/AppShell";
+import { PageHeader, SectionHeader } from "@/components/shared/PageHeader";
+import { StatCard } from "@/components/shared/StatCard";
+import { EmptyState, LoadingSkeleton } from "@/components/shared/EmptyState";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { Users, Wallet, Wrench, Megaphone, Building2, Calendar, Shield, HeartHandshake, Truck, CreditCard, UserPlus, PhoneCall } from "lucide-react";
 
-export default function Home() {
-  const { societies, loading: sLoad } = useSocieties();
-  const { units, loading: uLoad } = useUnits();
-  const [stats, setStats] = useState<any>({});
-  const [newCode, setNewCode] = useState("");
+export default function Dashboard() {
+  const [society, setSociety] = useState<any>(null);
+  const [user, setUser] = useState<any>(null);
+  const [units, setUnits] = useState<any[]>([]);
+  const [invites, setInvites] = useState<any[]>([]);
+  const [bills, setBills] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [auth, setAuth] = useState<boolean | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/invites").then(r => r.json()),
-      fetch("/api/bills").then(r => r.json()),
-      fetch("/api/tickets").then(r => r.json()),
-      fetch("/api/announcements").then(r => r.json()),
-    ]).then(([invites, bills, tickets, ann]) => setStats({ invites: invites.length, bills: bills.length, tickets: tickets.length, ann: ann.length })).catch(()=>{});
+    async function load() {
+      try {
+        const me = await fetch("/api/auth/me").then(r=>r.json());
+        if (!me.user) { setAuth(false); setLoading(false); return; }
+        setUser(me.user);
+        setAuth(true);
+        const [s, u, iv, b, t, a] = await Promise.all([
+          fetch("/api/societies").then(r=>r.json()).catch(()=>[]),
+          fetch("/api/units").then(r=>r.json()).catch(()=>[]),
+          fetch("/api/invites").then(r=>r.json()).catch(()=>[]),
+          fetch("/api/bills").then(r=>r.json()).catch(()=>[]),
+          fetch("/api/tickets").then(r=>r.json()).catch(()=>[]),
+          fetch("/api/announcements").then(r=>r.json()).catch(()=>[]),
+        ]);
+        setSociety(Array.isArray(s)? s[0] : null);
+        setUnits(Array.isArray(u)? u : []);
+        setInvites(Array.isArray(iv)? iv : []);
+        setBills(Array.isArray(b)? b : []);
+        setTickets(Array.isArray(t)? t : []);
+        setAnnouncements(Array.isArray(a)? a : []);
+      } catch { setAuth(false); }
+      finally { setLoading(false); }
+    }
+    load();
   }, []);
 
-  return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Green Acres — Society OS</h1>
-            <p className="text-muted-foreground text-sm">Multi-tenant gated-community • MyGate-style • Neon + Drizzle</p>
-          </div>
-          <Badge className="bg-emerald-500">DB CONNECTED</Badge>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Societies</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{sLoad ? "..." : societies.length}</div><p className="text-xs text-muted-foreground">{societies[0]?.name || "—"}</p></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Units (Flats)</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{uLoad ? "..." : units.length}</div><p className="text-xs text-muted-foreground">96 pilot seeded</p></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Visitor Invites</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{stats.invites ?? 0}</div><p className="text-xs text-muted-foreground">PIN + QR</p></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Pending Bills</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{stats.bills ?? 0}</div><p className="text-xs text-muted-foreground">UPI/PhonePe mock</p></CardContent></Card>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-4">
-          <Card>
-            <CardHeader><CardTitle>Quick Invite</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">Create a visitor invite for unit {units[0]?.number || "A-101"}</p>
-              <div className="flex gap-2">
-                <Input placeholder="Visitor name" id="vname" className="flex-1" />
-                <Input placeholder="Phone" id="vphone" className="flex-1" />
-              </div>
-              <Button onClick={async () => {
-                const name = (document.getElementById("vname") as HTMLInputElement)?.value;
-                const phone = (document.getElementById("vphone") as HTMLInputElement)?.value;
-                if (!name || !phone || !societies[0] || !units[0]) return toast.error("Fill name/phone — society/units loading?");
-                const vRes = await fetch("/api/visitors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ societyId: societies[0].id, name, phone }) });
-                const visitor = await vRes.json();
-                const users = await fetch("/api/societies").then(r=>r.json()); // trigger toast
-                const iRes = await fetch("/api/invites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ societyId: societies[0].id, unitId: units[0].id, createdBy: visitor.id, visitorId: visitor.id, purpose: "Quick invite" }) });
-                if (iRes.ok) { toast.success("Invite created: " + (await iRes.json()).code); } else toast.error("Invite failed");
-              }}>Create Invite</Button>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle>API Health</CardTitle></CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="flex justify-between"><span>/api/societies</span><Badge variant="outline">GET+POST+PATCH+DELETE</Badge></div>
-              <div className="flex justify-between"><span>/api/units</span><Badge variant="outline">100 flats cursor</Badge></div>
-              <div className="flex justify-between"><span>/api/invites</span><Badge variant="outline">code + QR + OTP</Badge></div>
-              <div className="flex justify-between"><span>/api/bills / payments</span><Badge variant="outline">mock UPI</Badge></div>
-              <p className="text-xs text-muted-foreground pt-2">Keys: DATABASE_URL ✓ • OTP mock ✓ • PAYMENT mock ✓ • RLS ready</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader><CardTitle>Units Directory (first 12)</CardTitle></CardHeader>
-          <CardContent>
-            {uLoad ? <p className="text-sm text-muted-foreground">Loading...</p> : (
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                {units.slice(0, 12).map(u => (
-                  <div key={u.id} className="rounded-lg border p-2 text-center text-xs">
-                    <div className="font-bold">{u.number}</div>
-                    <div className="text-muted-foreground">{u.type} • {u.areaSqft} sqft</div>
-                  </div>
-                ))}
-              </div>
-            )}
+  if (loading) return <AppShell><div className="max-w-6xl mx-auto"><LoadingSkeleton rows={6} /></div></AppShell>;
+  if (auth===false) return (
+    <AppShell>
+      <div className="max-w-6xl mx-auto">
+        <Card className="border-dashed">
+          <CardContent className="py-12 text-center">
+            <Shield className="h-10 w-10 mx-auto text-muted-foreground" />
+            <h2 className="mt-4 text-lg font-semibold">Sign in to continue</h2>
+            <p className="text-sm text-muted-foreground mt-1">Phone OTP authentication required to view society data.</p>
+            <Link href="/auth/sign-in"><Button className="mt-4">Sign in with phone</Button></Link>
           </CardContent>
         </Card>
       </div>
-    </div>
+    </AppShell>
+  );
+
+  const pendingBills = bills.filter(b=>b.status!=="PAID").length;
+  const openTickets = tickets.filter(t=>t.status==="OPEN").length;
+  const myUnit = units[0];
+
+  return (
+    <AppShell>
+      <div className="max-w-6xl mx-auto space-y-6">
+        <PageHeader
+          eyebrow={society?.code || "GAR001"}
+          title={`Good morning, ${user?.fullName?.split(" ")[0] || "Resident"}`}
+          description={`${society?.name || "Green Acres Residency"} • ${society?.city || "Chennai"} • Pilot with ${units.length} flats across 3 towers`}
+          action={<div className="flex gap-2"><Link href="/auth/sign-in"><Button variant="outline" size="sm">Switch account</Button></Link><Button size="sm" className="bg-red-600 hover:bg-red-700"><PhoneCall className="h-4 w-4 mr-2" />Emergency</Button></div>}
+        />
+
+        <div className="rounded-xl border bg-card px-4 py-3 flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center"><Building2 className="h-5 w-5" /></div>
+            <div>
+              <p className="text-sm font-semibold">{society?.name} • Unit {myUnit?.number || "A-101"}</p>
+              <p className="text-xs text-muted-foreground">{myUnit?.type || "FLAT"} • {myUnit?.areaSqft || 1210} sq ft • Verified resident</p>
+            </div>
+          </div>
+          <Badge variant="outline" className="w-fit">RWA verified</Badge>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatCard label="Flats" value={units.length} sub="3 towers • 4 floors" icon={<Building2 className="h-4 w-4" />} />
+          <StatCard label="Upcoming visitors" value={invites.length} sub="PIN/QR pending" icon={<Users className="h-4 w-4" />} />
+          <StatCard label="Bills due" value={pendingBills} sub={pendingBills? "Pay before due date" : "All clear"} icon={<Wallet className="h-4 w-4" />} />
+          <StatCard label="Helpdesk open" value={openTickets} sub={openTickets? "Needs attention" : "No open tickets"} icon={<Wrench className="h-4 w-4" />} />
+        </div>
+
+        <section aria-labelledby="quick-actions">
+          <SectionHeader title="Quick actions" description="Frequent tasks — tap to start" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[
+              { label: "Invite Visitor", icon: UserPlus, href: "/visitors", desc: "PIN & QR" },
+              { label: "View Bills", icon: CreditCard, href: "/bills", desc: `${pendingBills} due` },
+              { label: "Book Amenity", icon: Calendar, href: "/amenities", desc: "Pool • Gym" },
+              { label: "Helpdesk", icon: Wrench, href: "/helpdesk", desc: "Raise ticket" },
+              { label: "Deliveries", icon: Truck, href: "/deliveries", desc: "At gate" },
+              { label: "Domestic Help", icon: HeartHandshake, href: "/help", desc: "Check-in" },
+            ].map(a=>(
+              <Link key={a.label} href={a.href} className="rounded-xl border bg-card p-4 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <a.icon className="h-5 w-5" aria-hidden />
+                <p className="text-sm font-medium mt-2">{a.label}</p>
+                <p className="text-xs text-muted-foreground">{a.desc}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        <div className="grid lg:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Upcoming visitors</CardTitle></CardHeader>
+            <CardContent>
+              {invites.length===0 ? <EmptyState title="No upcoming visitors" description="Pre-approve guests with a PIN to speed up gate entry." icon={<Users className="h-5 w-5" />} /> : (
+                <ul className="space-y-3">
+                  {invites.slice(0,3).map((iv:any)=>(
+                    <li key={iv.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                      <div><p className="text-sm font-medium">{iv.code}</p><p className="text-xs text-muted-foreground">{iv.purpose || "Visit"} • {new Date(iv.validTo).toLocaleDateString()}</p></div>
+                      <StatusBadge status={iv.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Bills & payments</CardTitle></CardHeader>
+            <CardContent>
+              {bills.length===0 ? <EmptyState title="No outstanding bills" description="Maintenance bills appear here when issued by accounts." icon={<Wallet className="h-5 w-5" />} /> : (
+                <ul className="space-y-3">
+                  {bills.slice(0,3).map((b:any)=>(
+                    <li key={b.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                      <div><p className="text-sm font-medium">{b.title}</p><p className="text-xs text-muted-foreground">₹{b.total} • due {b.dueDate}</p></div>
+                      <StatusBadge status={b.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {bills.length>0 && <Link href="/bills" className="text-xs text-primary underline mt-3 inline-block">View all bills</Link>}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Recent announcements</CardTitle></CardHeader>
+            <CardContent>
+              {announcements.length===0 ? <EmptyState title="No new announcements" description="Society updates from RWA appear here." icon={<Megaphone className="h-5 w-5" />} /> : (
+                <ul className="space-y-3">
+                  {announcements.slice(0,3).map((a:any)=>(
+                    <li key={a.id} className="rounded-lg border px-3 py-2">
+                      <p className="text-sm font-medium">{a.title}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-2">{a.body}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Helpdesk</CardTitle></CardHeader>
+            <CardContent>
+              {tickets.length===0 ? <EmptyState title="No open tickets" description="Raise a ticket for plumbing, electrical or housekeeping." icon={<Wrench className="h-5 w-5" />} actionLabel="Raise ticket" onAction={()=>{}} /> : (
+                <ul className="space-y-3">
+                  {tickets.slice(0,3).map((t:any)=>(
+                    <li key={t.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                      <div><p className="text-sm font-medium">{t.title}</p><p className="text-xs text-muted-foreground">{t.category} • {t.priority}</p></div>
+                      <StatusBadge status={t.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="bg-amber-50 border-amber-200 dark:bg-amber-950/20">
+          <CardContent className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div><p className="text-sm font-semibold">Emergency & gate</p><p className="text-xs text-muted-foreground">One-tap SOS reaches security + RWA. For gate entry, keep visitor PIN ready.</p></div>
+            <div className="flex gap-2"><Button variant="outline" size="sm"><Shield className="h-4 w-4 mr-2" />Gate directory</Button><Button size="sm" className="bg-red-600 hover:bg-red-700">SOS — Call security</Button></div>
+          </CardContent>
+        </Card>
+      </div>
+    </AppShell>
   );
 }

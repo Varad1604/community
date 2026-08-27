@@ -14,7 +14,7 @@ async function fetchWithCookie(path: string, opts: any = {}, cookie?: string) {
 async function createUserAndSociety(role: string, suffix: string) {
   const phone = `90000${randomInt(10000,99999)}${suffix.slice(0,2)}`;
   const [user] = await db.insert(users).values({ phone, fullName: `Test ${role}`, phoneVerified: true }).returning();
-  const [soc] = await db.insert(societies).values({ name: `Soc-${suffix}`, code: `SS${suffix}${randomInt(100,999)}`, city: "Test" }).returning();
+  const [soc] = await db.insert(societies).values({ name: `Soc-${suffix}`, code: `SS${suffix}${Date.now().toString().slice(-6)}${randomInt(10,99)}`, city: "Test" }).returning();
   await db.insert(userSocietyRoles).values({ userId: user.id, societyId: soc.id, role: role as any });
   const [b] = await db.insert(buildings).values({ societyId: soc.id, name: "B1", floorsCount: 1 }).returning();
   const [f] = await db.insert(floors).values({ societyId: soc.id, buildingId: b.id, number: 1 }).returning();
@@ -40,7 +40,7 @@ async function run(){
   assert(res.status===401, "A: Unauthenticated -> 401");
 
   // B: resident -> admin operation 403
-  res = await fetchWithCookie("/api/societies", { method: "POST", body: JSON.stringify({ name:"Hack", code:"HACK"+randomInt(100,999)}) }, residentA.cookie);
+  res = await fetchWithCookie("/api/societies", { method: "POST", body: JSON.stringify({ name:"Hack", code:"HACK"+Date.now().toString().slice(-6)+randomInt(10,99)}) }, residentA.cookie);
   assert(res.status===403, "B: Resident -> admin POST societies = 403");
 
   // C: Society A resident -> Society B resource (try GET society B)

@@ -1,0 +1,76 @@
+import { Home, Users, Building2, Shield, Truck, HeartHandshake, Wallet, Wrench, Megaphone, User, Bell, Calendar, CreditCard, ClipboardList, BarChart3, ScrollText } from "lucide-react";
+
+export type NavItem = { label: string; href: string; icon: any; badge?: string };
+export type NavSection = { title: string; items: NavItem[] };
+
+export const residentNav: NavSection[] = [
+  { title: "Home", items: [{ label: "Home", href: "/", icon: Home }] },
+  { title: "Daily", items: [
+    { label: "Visitors", href: "/visitors", icon: Users },
+    { label: "Deliveries", href: "/deliveries", icon: Truck },
+    { label: "Domestic Help", href: "/help", icon: HeartHandshake },
+  ]},
+  { title: "Society", items: [
+    { label: "Amenities", href: "/amenities", icon: Calendar },
+    { label: "Bills & Payments", href: "/bills", icon: Wallet },
+    { label: "Helpdesk", href: "/helpdesk", icon: Wrench },
+  ]},
+  { title: "Community", items: [
+    { label: "Announcements", href: "/announcements", icon: Megaphone },
+    { label: "Community", href: "/community", icon: Users },
+  ]},
+  { title: "You", items: [
+    { label: "Profile", href: "/profile", icon: User },
+  ]},
+];
+
+export const guardNav: NavSection[] = [
+  { title: "Gate", items: [
+    { label: "Gate", href: "/guard", icon: Shield },
+    { label: "Visitors", href: "/guard/visitors", icon: Users },
+    { label: "Deliveries", href: "/guard/deliveries", icon: Truck },
+    { label: "Vehicles", href: "/guard/vehicles", icon: Building2 },
+  ]},
+  { title: "Records", items: [
+    { label: "Domestic Help", href: "/guard/help", icon: HeartHandshake },
+    { label: "Residents", href: "/guard/residents", icon: Users },
+    { label: "Activity", href: "/guard/activity", icon: ScrollText },
+  ]},
+];
+
+export const adminNav: NavSection[] = [
+  { title: "Overview", items: [{ label: "Overview", href: "/admin", icon: BarChart3 }] },
+  { title: "Manage", items: [
+    { label: "Residents", href: "/admin/residents", icon: Users },
+    { label: "Units", href: "/admin/units", icon: Building2 },
+    { label: "Gates", href: "/admin/gates", icon: Shield },
+    { label: "Amenities", href: "/admin/amenities", icon: Calendar },
+  ]},
+  { title: "Operations", items: [
+    { label: "Visitors", href: "/admin/visitors", icon: Users },
+    { label: "Bookings", href: "/admin/bookings", icon: ClipboardList },
+    { label: "Bills", href: "/admin/bills", icon: CreditCard },
+    { label: "Payments", href: "/admin/payments", icon: Wallet },
+    { label: "Helpdesk", href: "/admin/helpdesk", icon: Wrench },
+  ]},
+  { title: "Engage", items: [
+    { label: "Announcements", href: "/admin/announcements", icon: Megaphone },
+    { label: "Community", href: "/admin/community", icon: Bell },
+    { label: "Reports", href: "/admin/reports", icon: BarChart3 },
+    { label: "Audit Logs", href: "/admin/audit", icon: ScrollText },
+  ]},
+];
+
+export function getNavForRoles(roles: string[]) {
+  if (roles.includes("GUARD") || roles.includes("SECURITY_MANAGER")) return guardNav;
+  if (roles.includes("SOCIETY_ADMIN") || roles.includes("RWA_MEMBER") || roles.includes("ACCOUNTANT") || roles.includes("FACILITY_MANAGER")) return adminNav;
+  return residentNav;
+}
+
+export const bottomNavItems = [
+  { label: "Home", href: "/", icon: Home },
+  { label: "Visitors", href: "/visitors", icon: Users },
+  { label: "Bills", href: "/bills", icon: Wallet },
+  { label: "Helpdesk", href: "/helpdesk", icon: Wrench },
+  { label: "Profile", href: "/profile", icon: User },
+];
