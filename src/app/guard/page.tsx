@@ -9,7 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Shield, Clock, Building2, Users, LogIn, LogOut, Search, UserPlus, QrCode, Phone, MapPin, AlertTriangle, Package } from "lucide-react";
+import { Shield, Clock, Building2, Users, LogIn, LogOut, Search, UserPlus, QrCode, Phone, MapPin, AlertTriangle, Package, HeartHandshake } from "lucide-react";
 
 export default function GuardConsole() {
   const [society, setSociety] = useState<any>(null);
@@ -30,13 +30,17 @@ export default function GuardConsole() {
   const [deliveryForm, setDeliveryForm] = useState({ courierName:"", awb:"", unitId:"" });
   const [deliveryQuery, setDeliveryQuery] = useState("");
   const [deliveryResults, setDeliveryResults] = useState<any[]>([]);
+  const [helpList, setHelpList] = useState<any[]>([]);
+  const [helpAttendance, setHelpAttendance] = useState<any[]>([]);
+  const [helpQuery, setHelpQuery] = useState("");
+  const [helpSearchResults, setHelpSearchResults] = useState<any[]>([]);
 
   useEffect(()=>{
     const t = setInterval(()=>setTime(new Date()), 1000);
     fetch("/api/auth/me").then(r=>r.json()).then(d=> setGuard(d.user)).catch(()=>{});
     fetch("/api/societies").then(r=>r.json()).then(d=> setSociety(Array.isArray(d)? d[0]: null)).catch(()=>{});
     fetch("/api/gates").then(r=>r.json()).then(d=>{ if(Array.isArray(d)){ setGates(d); if(d[0]) setSelectedGate(d[0].id); }}).catch(()=>{});
-    loadExpected(); loadInside(); loadDeliveries();
+    loadExpected(); loadInside(); loadDeliveries(); loadHelp(); loadHelpAttendance();
     const saved = localStorage.getItem("guard_gate");
     if (saved) setSelectedGate(saved);
     return ()=>clearInterval(t);
@@ -47,6 +51,8 @@ export default function GuardConsole() {
   async function loadExpected(){ fetch("/api/guard/expected").then(r=>r.json()).then(d=> setExpected(Array.isArray(d)? d : [])).catch(()=>{}); }
   async function loadInside(){ fetch("/api/guard/inside").then(r=>r.json()).then(d=> setInside(Array.isArray(d)? d : [])).catch(()=>{}); }
   async function loadDeliveries(){ fetch("/api/deliveries").then(r=>r.json()).then(d=> setDeliveries(Array.isArray(d)? d : [])).catch(()=>{}); }
+  async function loadHelp(){ fetch("/api/help").then(r=>r.json()).then(d=> setHelpList(Array.isArray(d)? d : [])).catch(()=>{}); }
+  async function loadHelpAttendance(){ fetch("/api/help/attendance").then(r=>r.json()).then(d=> setHelpAttendance(Array.isArray(d)? d : [])).catch(()=>{}); }
 
   async function verify(){
     if (!code.trim()) return toast.error("Enter pass code");
@@ -94,6 +100,22 @@ export default function GuardConsole() {
     const d = await res.json();
     if (!res.ok) toast.error(d.error||"Failed"); else { toast.success(`Delivery for ${d.courierName} recorded`); setDeliveryForm({ courierName:"", awb:"", unitId:""}); setDeliveryQuery(""); setDeliveryResults([]); loadDeliveries(); }
   }
+  async function searchHelp(){
+    if (helpQuery.length<2) return;
+    const q = helpQuery.toLowerCase();
+    const filtered = helpList.filter((h:any)=> h.help.name.toLowerCase().includes(q) || h.help.phone.includes(q));
+    setHelpSearchResults(filtered);
+  }
+  async function helpCheckIn(helpId: string, unitId: string){
+    const res = await fetch("/api/help/attendance", { method:"POST", headers:{ "Content-Type":"application/json"}, body: JSON.stringify({ helpId, unitId, gateId: selectedGate || undefined }) });
+    const d = await res.json();
+    if (!res.ok) toast.error(d.error||"Check-in failed"); else { toast.success("Help checked in"); loadHelpAttendance(); }
+  }
+  async function helpCheckOut(attendanceId: string){
+    const res = await fetch("/api/help/attendance", { method:"POST", headers:{ "Content-Type":"application/json"}, body: JSON.stringify({ attendanceId }) });
+    const d = await res.json();
+    if (!res.ok) toast.error(d.error||"Check-out failed"); else { toast.success("Checked out"); loadHelpAttendance(); }
+  }
 
   return (
     <AppShell>
@@ -115,11 +137,12 @@ export default function GuardConsole() {
         </div>
 
         <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 h-10">
+          <TabsList className="grid w-full grid-cols-6 h-10">
             <TabsTrigger value="verify" className="text-xs">Verify</TabsTrigger>
             <TabsTrigger value="expected" className="text-xs">Expected {expected.length>0 && <Badge className="ml-1 px-1">{expected.length}</Badge>}</TabsTrigger>
             <TabsTrigger value="inside" className="text-xs">Inside {inside.length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{inside.length}</Badge>}</TabsTrigger>
             <TabsTrigger value="deliveries" className="text-xs">Deliveries {deliveries.filter((d:any)=>d.status==="AT_GATE").length>0 && <Badge className="ml-1 px-1 bg-amber-600">{deliveries.filter((d:any)=>d.status==="AT_GATE").length}</Badge>}</TabsTrigger>
+            <TabsTrigger value="help" className="text-xs">Help {helpAttendance.filter((h:any)=>!h.attendance.checkOut).length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{helpAttendance.filter((h:any)=>!h.attendance.checkOut).length}</Badge>}</TabsTrigger>
             <TabsTrigger value="walkin" className="text-xs">Walk-in</TabsTrigger>
           </TabsList>
 
@@ -252,6 +275,53 @@ export default function GuardConsole() {
                         <p className="text-xs">Unit {d.unitId.slice(0,8)} • {d.status}</p>
                       </div>
                       <Badge variant={d.status==="AT_GATE" ? "default" : "secondary"} className={d.status==="AT_GATE" ? "bg-amber-600" : ""}>{d.status}</Badge>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="help" className="space-y-4 mt-4">
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><HeartHandshake className="h-4 w-4" />Domestic Help — Attendance</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex gap-2">
+                  <Input value={helpQuery} onChange={e=>setHelpQuery(e.target.value)} placeholder="Search name or phone e.g. Lakshmi" className="flex-1" />
+                  <Button type="button" variant="outline" onClick={searchHelp}><Search className="h-4 w-4 mr-1" />Find</Button>
+                  <Button type="button" variant="ghost" onClick={()=>{ setHelpQuery(""); setHelpSearchResults([]); loadHelp(); }}>All</Button>
+                </div>
+                {(helpSearchResults.length>0 ? helpSearchResults : helpList).length===0 ? <p className="text-sm text-muted-foreground text-center py-4">No domestic help found</p> : (
+                  <div className="space-y-2 max-h-[45vh] overflow-auto">
+                    {(helpSearchResults.length>0 ? helpSearchResults : helpList).slice(0,20).map((item:any)=> {
+                      const isInside = helpAttendance.some((a:any)=> a.help?.id===item.help.id && !a.attendance.checkOut);
+                      const att = helpAttendance.find((a:any)=> a.help?.id===item.help.id && !a.attendance.checkOut);
+                      return (
+                        <Card key={item.help.id} className="border">
+                          <CardContent className="p-3 flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center font-medium">{item.help.name[0]}</div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium">{item.help.name} • {item.help.category}</p>
+                              <p className="text-xs text-muted-foreground">{item.help.phone} • {item.links.length} unit(s) {isInside && "• Inside"}</p>
+                            </div>
+                            {isInside ? <Button size="sm" variant="outline" onClick={()=>helpCheckOut(att.attendance.id)}><LogOut className="h-4 w-4 mr-1" />Out</Button> : <Button size="sm" onClick={()=>helpCheckIn(item.help.id, item.links[0]?.unitId)}><LogIn className="h-4 w-4 mr-1" />In</Button>}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">Check-in creates attendance per unit. Guard verifies link belongs to society. RLS enforced.</p>
+              </CardContent>
+            </Card>
+            <div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Help Inside Now</h2><Badge variant="secondary">{helpAttendance.filter((h:any)=>!h.attendance.checkOut).length} inside</Badge></div>
+            {helpAttendance.filter((h:any)=>!h.attendance.checkOut).length===0 ? <p className="text-sm text-muted-foreground text-center py-4">No help inside</p> : (
+              <div className="space-y-2">
+                {helpAttendance.filter((h:any)=>!h.attendance.checkOut).map((it:any)=>(
+                  <Card key={it.attendance.id}>
+                    <CardContent className="p-3 flex items-center gap-3">
+                      <div className="flex-1"><p className="text-sm font-medium">{it.help?.name} • {it.unit?.number}</p><p className="text-xs text-muted-foreground">In since {new Date(it.attendance.checkIn).toLocaleTimeString()} • Gate {it.attendance.gateId?.slice(0,6) || "—"}</p></div>
+                      <Button size="sm" variant="outline" onClick={()=>helpCheckOut(it.attendance.id)}><LogOut className="h-4 w-4 mr-1" />Out</Button>
                     </CardContent>
                   </Card>
                 ))}
