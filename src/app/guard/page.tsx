@@ -9,7 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Shield, Clock, Building2, Users, LogIn, LogOut, Search, UserPlus, QrCode, Phone, MapPin, AlertTriangle, Package, HeartHandshake } from "lucide-react";
+import { Shield, Clock, Building2, Users, LogIn, LogOut, Search, UserPlus, QrCode, Phone, MapPin, AlertTriangle, Package, HeartHandshake, Car } from "lucide-react";
 
 export default function GuardConsole() {
   const [society, setSociety] = useState<any>(null);
@@ -34,6 +34,8 @@ export default function GuardConsole() {
   const [helpAttendance, setHelpAttendance] = useState<any[]>([]);
   const [helpQuery, setHelpQuery] = useState("");
   const [helpSearchResults, setHelpSearchResults] = useState<any[]>([]);
+  const [vehicleQuery, setVehicleQuery] = useState("");
+  const [vehicleResults, setVehicleResults] = useState<any[]>([]);
 
   useEffect(()=>{
     const t = setInterval(()=>setTime(new Date()), 1000);
@@ -116,6 +118,13 @@ export default function GuardConsole() {
     const d = await res.json();
     if (!res.ok) toast.error(d.error||"Check-out failed"); else { toast.success("Checked out"); loadHelpAttendance(); }
   }
+  async function searchVehicle(){
+    if (vehicleQuery.length<2) return;
+    const res = await fetch(`/api/guard/vehicle-search?q=${encodeURIComponent(vehicleQuery)}`);
+    const d = await res.json();
+    setVehicleResults(Array.isArray(d)? d : []);
+    if (!res.ok) toast.error(d.error||"Search failed");
+  }
 
   return (
     <AppShell>
@@ -137,12 +146,13 @@ export default function GuardConsole() {
         </div>
 
         <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 h-10">
+          <TabsList className="grid w-full grid-cols-7 h-10">
             <TabsTrigger value="verify" className="text-xs">Verify</TabsTrigger>
             <TabsTrigger value="expected" className="text-xs">Expected {expected.length>0 && <Badge className="ml-1 px-1">{expected.length}</Badge>}</TabsTrigger>
             <TabsTrigger value="inside" className="text-xs">Inside {inside.length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{inside.length}</Badge>}</TabsTrigger>
             <TabsTrigger value="deliveries" className="text-xs">Deliveries {deliveries.filter((d:any)=>d.status==="AT_GATE").length>0 && <Badge className="ml-1 px-1 bg-amber-600">{deliveries.filter((d:any)=>d.status==="AT_GATE").length}</Badge>}</TabsTrigger>
             <TabsTrigger value="help" className="text-xs">Help {helpAttendance.filter((h:any)=>!h.attendance.checkOut).length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{helpAttendance.filter((h:any)=>!h.attendance.checkOut).length}</Badge>}</TabsTrigger>
+            <TabsTrigger value="vehicles" className="text-xs">Vehicles</TabsTrigger>
             <TabsTrigger value="walkin" className="text-xs">Walk-in</TabsTrigger>
           </TabsList>
 
@@ -327,6 +337,34 @@ export default function GuardConsole() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="vehicles" className="space-y-4 mt-4">
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Car className="h-4 w-4" />Vehicle Verification</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">Search registration number or unit. Society-scoped, verified at gate.</p>
+                <div className="flex gap-2">
+                  <Input value={vehicleQuery} onChange={e=>setVehicleQuery(e.target.value.toUpperCase())} placeholder="KA01AB1234 or A-101" className="font-mono flex-1" />
+                  <Button type="button" onClick={searchVehicle}><Search className="h-4 w-4 mr-1" />Verify</Button>
+                </div>
+                {vehicleResults.length>0 && (
+                  <div className="space-y-2">
+                    {vehicleResults.map((r:any)=>(
+                      <Card key={r.vehicle.id} className="border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20">
+                        <CardContent className="p-3">
+                          <p className="text-sm font-mono font-bold">{r.vehicle.numberPlate} • {r.vehicle.type}</p>
+                          <p className="text-xs text-muted-foreground">Unit {r.unit?.number || r.vehicle.unitId.slice(0,8)} • Owner {r.owner?.fullName || r.vehicle.userId.slice(0,8)} {r.owner?.phone && `• ${r.owner.phone}`}</p>
+                          <p className="text-xs">Sticker {r.vehicle.stickerNo || "—"} • <Badge variant="secondary" className="ml-1">Authorized</Badge></p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                {vehicleQuery && vehicleResults.length===0 && <p className="text-sm text-muted-foreground text-center py-4">No vehicle found for "{vehicleQuery}"</p>}
+                <p className="text-xs text-muted-foreground">Vehicle entry/exit table not in schema — lookup only. Documented limitation: add vehicle_entries table for full gate logging.</p>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="walkin" className="space-y-4 mt-4">

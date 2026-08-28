@@ -9,8 +9,10 @@ export const residentNav: NavSection[] = [
     { label: "Visitors", href: "/visitors", icon: Users },
     { label: "Deliveries", href: "/deliveries", icon: Truck },
     { label: "Domestic Help", href: "/help", icon: HeartHandshake },
+    { label: "Vehicles", href: "/vehicles", icon: Building2 },
   ]},
   { title: "Society", items: [
+    { label: "Parking", href: "/parking", icon: Building2 },
     { label: "Amenities", href: "/amenities", icon: Calendar },
     { label: "Bills & Payments", href: "/bills", icon: Wallet },
     { label: "Helpdesk", href: "/helpdesk", icon: Wrench },
@@ -43,6 +45,7 @@ export const adminNav: NavSection[] = [
   { title: "Manage", items: [
     { label: "Residents", href: "/admin/residents", icon: Users },
     { label: "Units", href: "/admin/units", icon: Building2 },
+    { label: "Parking", href: "/admin/parking", icon: Building2 },
     { label: "Gates", href: "/admin/gates", icon: Shield },
     { label: "Amenities", href: "/admin/amenities", icon: Calendar },
   ]},

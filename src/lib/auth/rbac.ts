@@ -27,6 +27,11 @@ const perms: Record<string, Role[]> = {
   "help:read": ["SUPER_ADMIN","SOCIETY_ADMIN","SECURITY_MANAGER","GUARD","RESIDENT","FAMILY_MEMBER"],
   "help:manage": ["RESIDENT","FAMILY_MEMBER","SOCIETY_ADMIN","FACILITY_MANAGER","SUPER_ADMIN"],
   "help:attendance": ["GUARD","SECURITY_MANAGER","FACILITY_MANAGER","SUPER_ADMIN"],
+  "vehicle:read": ["SUPER_ADMIN","SOCIETY_ADMIN","SECURITY_MANAGER","GUARD","RESIDENT","FAMILY_MEMBER"],
+  "vehicle:manage": ["RESIDENT","FAMILY_MEMBER","SOCIETY_ADMIN","FACILITY_MANAGER","SUPER_ADMIN"],
+  "vehicle:entry": ["GUARD","SECURITY_MANAGER","SUPER_ADMIN"],
+  "parking:read": ["SUPER_ADMIN","SOCIETY_ADMIN","FACILITY_MANAGER","SECURITY_MANAGER","GUARD","RESIDENT","FAMILY_MEMBER"],
+  "parking:manage": ["SOCIETY_ADMIN","FACILITY_MANAGER","SUPER_ADMIN"],
   "audit:read": ["SUPER_ADMIN","SOCIETY_ADMIN"],
 };
 export function can(roles: Role[], action: string) {
