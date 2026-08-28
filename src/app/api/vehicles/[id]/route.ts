@@ -87,6 +87,7 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ success:true });
   } catch (e:any) {
     if (e.message==="Forbidden") return NextResponse.json({ error:"Forbidden" }, { status:403 });
+    if (e.message==="Not found") return NextResponse.json({ error:"Not found" }, { status:404 });
     return NextResponse.json({ error: e.message || "Failed" }, { status:500 });
   }
 }

@@ -48,8 +48,14 @@ export async function POST(req: Request) {
       if (!bill) throw new Error("Bill not found");
 
       const expectedPaise = amountToPaise(payment.amount);
-      // Optionally verify amount matches order? For mock we can skip strict check, but for razorpay we should ensure order amount equals expected
-      // We don't have order amount stored separately, but we can trust payment.amount
+      const storedOrderPaise = (payment.rawPayload as any)?.amountPaise;
+      if (storedOrderPaise !== undefined && storedOrderPaise !== expectedPaise) throw new Error("Order amount mismatch");
+      const allSuccessForCheck = await tx.select().from(payments).where(and(eq(payments.billId, bill.id), eq(payments.status, "SUCCESS")));
+      const alreadyPaidPaise = allSuccessForCheck.reduce((sum, p) => sum + amountToPaise(p.amount), 0);
+      const totalPaiseCheck = amountToPaise(bill.total);
+      const outstandingCheck = totalPaiseCheck - alreadyPaidPaise;
+      if (expectedPaise > outstandingCheck) throw new Error("Amount exceeds outstanding");
+      if (expectedPaise <= 0) throw new Error("Invalid amount");
 
       const [updatedPayment] = await tx.update(payments).set({
         status: "SUCCESS",
