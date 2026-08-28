@@ -55,7 +55,7 @@ export async function POST(req: Request) {
       const members = await tx.select().from(unitMembers).where(and(eq(unitMembers.userId, sess.userId), eq(unitMembers.unitId, unitId)));
       const roles = await import("@/lib/tenant").then(m=>m.getUserRoles(sess.userId, societyId));
       const isPrivileged = roles.some((r:string)=>["SOCIETY_ADMIN","ACCOUNTANT","SUPER_ADMIN"].includes(r));
-      if (members.length===0 && !isPrivileged && bill.unitId!==unitId) throw new Error("Not authorized for unit");
+      if (members.length===0 && !isPrivileged) throw new Error("Not authorized for unit");
       if (bill.unitId!==unitId && !isPrivileged) throw new Error("Bill does not belong to unit");
 
       const amountStr = parsed.data.amount;
