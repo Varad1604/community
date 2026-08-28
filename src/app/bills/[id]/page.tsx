@@ -7,8 +7,22 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Wallet, Calendar, Clock, CreditCard } from "lucide-react";
+import { toast } from "sonner";
 
 function formatINR(s: string){ const n=parseFloat(s); return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(n); }
+
+declare global { interface Window { Razorpay: any } }
+
+function loadRazorpay(): Promise<void> {
+  return new Promise((resolve, reject)=>{
+    if (typeof window !== "undefined" && window.Razorpay) return resolve();
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = ()=> resolve();
+    script.onerror = ()=> reject(new Error("Failed to load Razorpay"));
+    document.body.appendChild(script);
+  });
+}
 
 export default function BillDetail(){
   const params = useParams<{id:string}>();
@@ -16,10 +30,79 @@ export default function BillDetail(){
   const [data, setData]=useState<any>(null);
   const [loading,setLoading]=useState(true);
   const [error, setError]=useState<string|null>(null);
+  const [paying, setPaying]=useState(false);
+
+  async function refresh(){
+    try {
+      const r = await fetch(`/api/bills/${params.id}`);
+      if(!r.ok) throw new Error();
+      setData(await r.json());
+    } catch { setError("Couldn't load bill"); }
+  }
 
   useEffect(()=>{
-    fetch(`/api/bills/${params.id}`).then(r=>{ if(!r.ok) throw new Error(); return r.json(); }).then(setData).catch(()=> setError("Couldn't load bill")).finally(()=>setLoading(false));
+    refresh().finally(()=>setLoading(false));
   }, [params.id]);
+
+  async function handlePay(){
+    if (!data) return;
+    const outstanding = data.outstanding || data.bill.total;
+    if (parseFloat(outstanding) <= 0) return toast.error("Bill already paid");
+    setPaying(true);
+    try {
+      const orderRes = await fetch("/api/payments/create-order", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json"},
+        body: JSON.stringify({ billId: data.bill.id }),
+      });
+      const orderData = await orderRes.json();
+      if (!orderRes.ok) throw new Error(orderData.error || "Failed to create order");
+
+      await loadRazorpay();
+
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: "Society OS",
+        description: data.bill.title,
+        order_id: orderData.orderId,
+        handler: async function (response: any) {
+          try {
+            const verifyRes = await fetch("/api/payments/verify", {
+              method:"POST",
+              headers:{ "Content-Type":"application/json"},
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                paymentId: orderData.paymentId,
+              }),
+            });
+            const verifyData = await verifyRes.json();
+            if (!verifyRes.ok) throw new Error(verifyData.error || "Verification failed");
+            toast.success("Payment verified — bill updated");
+            refresh();
+          } catch (e:any) {
+            toast.error(e.message || "Verification failed");
+          } finally { setPaying(false); }
+        },
+        prefill: { name: "", contact: "" },
+        theme: { color: "#000000" },
+        modal: { ondismiss: ()=> setPaying(false) },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", function (response:any){
+        toast.error(response.error?.description || "Payment failed");
+        setPaying(false);
+      });
+      rzp.open();
+    } catch (e:any) {
+      toast.error(e.message || "Payment failed");
+      setPaying(false);
+    }
+  }
 
   if(loading) return <AppShell><div className="max-w-2xl mx-auto animate-pulse h-40 bg-muted rounded-xl" /></AppShell>;
   if(error || !data) return <AppShell><div className="max-w-2xl mx-auto"><Card><CardContent className="py-10 text-center"><p className="text-sm">{error || "Not found"}</p><Button variant="outline" size="sm" className="mt-3" onClick={()=>router.push("/bills")}>Back</Button></CardContent></Card></div></AppShell>;
@@ -27,6 +110,7 @@ export default function BillDetail(){
   const { bill, unit, payments, outstanding } = data;
   const isOverdue = new Date(bill.dueDate) < new Date(new Date().setHours(0,0,0,0)) && bill.status!=="PAID";
   const totalOutstanding = outstanding || bill.total;
+  const isPaid = bill.status==="PAID" || parseFloat(totalOutstanding) <= 0.01;
 
   return (
     <AppShell>
@@ -45,13 +129,15 @@ export default function BillDetail(){
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div><p className="text-xs text-muted-foreground">Total</p><p className="text-lg font-semibold">{formatINR(bill.total)}</p><p className="text-xs text-muted-foreground">Sub {formatINR(bill.subtotal)} + Tax {formatINR(bill.tax)}</p></div>
-              <div><p className="text-xs text-muted-foreground">Outstanding</p><p className={`text-lg font-semibold ${parseFloat(totalOutstanding) > 0 ? "text-amber-700" : "text-emerald-600"}`}>{formatINR(totalOutstanding)}</p><p className="text-xs text-muted-foreground">{bill.status==="PAID" ? "Paid in full" : isOverdue ? "Overdue" : "Due soon"}</p></div>
+              <div><p className="text-xs text-muted-foreground">Outstanding</p><p className={`text-lg font-semibold ${parseFloat(totalOutstanding) > 0 ? "text-amber-700" : "text-emerald-600"}`}>{formatINR(totalOutstanding)}</p><p className="text-xs text-muted-foreground">{isPaid ? "Paid in full" : isOverdue ? "Overdue" : "Due soon"}</p></div>
             </div>
             <div className="mt-4 flex gap-2">
-              <Button className="flex-1" disabled title="Payment gateway coming soon"><CreditCard className="h-4 w-4 mr-2" />Pay Now — Coming Soon</Button>
+              <Button className="flex-1" onClick={handlePay} disabled={isPaid || paying}>
+                <CreditCard className="h-4 w-4 mr-2" />{isPaid ? "Paid" : paying ? "Processing..." : `Pay ${formatINR(totalOutstanding)}`}
+              </Button>
               <Badge variant="outline" className="px-2 py-1 h-10 flex items-center">Ref {bill.id.slice(0,8)}</Badge>
             </div>
-            <p className="text-xs text-muted-foreground text-center mt-2">Secure ledger • No payment simulated • Gateway in Phase 2.5B</p>
+            <p className="text-xs text-muted-foreground text-center mt-2">Razorpay • UPI/Card • Secure • Server verified</p>
           </CardContent>
         </Card>
 
