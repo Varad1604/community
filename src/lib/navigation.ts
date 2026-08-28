@@ -18,6 +18,7 @@ export const residentNav: NavSection[] = [
     { label: "Helpdesk", href: "/helpdesk", icon: Wrench },
   ]},
   { title: "Community", items: [
+    { label: "Bookings", href: "/bookings", icon: Calendar },
     { label: "Announcements", href: "/announcements", icon: Megaphone },
     { label: "Community", href: "/community", icon: Users },
   ]},
