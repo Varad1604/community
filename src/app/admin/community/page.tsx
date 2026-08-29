@@ -31,12 +31,12 @@ export default function AdminCommunityDashboard() {
       <div className="max-w-6xl mx-auto space-y-4">
         <PageHeader title="Community — Overview" description="Real counts from society data • communication hub" />
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-          <StatCard title="Announcements" value={loading?"—":stats.announcements} icon={Megaphone} />
-          <StatCard title="Active Polls" value={loading?"—":stats.polls} icon={BarChart3} />
-          <StatCard title="Upcoming Events" value={loading?"—":stats.upcomingEvents} subtext={`${stats.events} total`} icon={Calendar} />
-          <StatCard title="Active Emergencies" value={loading?"—":stats.emergencies} icon={Siren} />
-          <StatCard title="Unread Notifications" value={loading?"—":stats.notifications} icon={Bell} />
-          <StatCard title="Total Events" value={loading?"—":stats.events} icon={Calendar} />
+          <StatCard label="Announcements" value={loading?"—":stats.announcements} icon={<Megaphone className="h-5 w-5" />} />
+          <StatCard label="Active Polls" value={loading?"—":stats.polls} icon={<BarChart3 className="h-5 w-5" />} />
+          <StatCard label="Upcoming Events" value={loading?"—":stats.upcomingEvents} sub={`${stats.events} total`} icon={<Calendar className="h-5 w-5" />} />
+          <StatCard label="Active Emergencies" value={loading?"—":stats.emergencies} icon={<Siren className="h-5 w-5" />} />
+          <StatCard label="Unread Notifications" value={loading?"—":stats.notifications} icon={<Bell className="h-5 w-5" />} />
+          <StatCard label="Total Events" value={loading?"—":stats.events} icon={<Calendar className="h-5 w-5" />} />
         </div>
         <Card><CardContent className="p-4 text-xs text-muted-foreground">Counts are live from database. No mock data. Refresh to update. Use Engage nav to manage Announcements, Polls, Events, Emergency.</CardContent></Card>
       </div>
