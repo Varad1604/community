@@ -1,11 +1,12 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-export function EmptyState({ title, description, actionLabel, onAction, icon }: { title: string; description?: string; actionLabel?: string; onAction?: () => void; icon?: React.ReactNode }) {
+export function EmptyState({ title, description, actionLabel, onAction, href, icon }: { title: string; description?: string; actionLabel?: string; onAction?: () => void; href?: string; icon?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-card px-6 py-10 text-center">
       {icon && <div className="mb-3 rounded-full bg-muted p-3 text-muted-foreground">{icon}</div>}
       <h3 className="text-sm font-semibold">{title}</h3>
       {description && <p className="text-sm text-muted-foreground mt-1 max-w-sm">{description}</p>}
-      {actionLabel && onAction && <Button size="sm" className="mt-4" onClick={onAction}>{actionLabel}</Button>}
+      {actionLabel && href ? <Link href={href}><Button size="sm" className="mt-4">{actionLabel}</Button></Link> : actionLabel && onAction ? <Button size="sm" className="mt-4" onClick={onAction}>{actionLabel}</Button> : null}
     </div>
   );
 }

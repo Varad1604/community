@@ -70,12 +70,12 @@ export default function BillsPage(){
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="outstanding" className="text-xs">Outstanding {counts.outstanding>0 && <Badge variant="secondary" className="ml-1 px-1">{counts.outstanding}</Badge>}</TabsTrigger>
-            <TabsTrigger value="dueSoon" className="text-xs">Due Soon</TabsTrigger>
-            <TabsTrigger value="overdue" className="text-xs">Overdue {counts.overdue>0 && <Badge variant="secondary" className="ml-1 px-1 bg-red-600 text-white">{counts.overdue}</Badge>}</TabsTrigger>
-            <TabsTrigger value="paid" className="text-xs">Paid</TabsTrigger>
-            <TabsTrigger value="history" className="text-xs">History</TabsTrigger>
+          <TabsList className="flex w-full overflow-x-auto gap-1 h-10 p-1 justify-start">
+            <TabsTrigger value="outstanding" className="text-xs whitespace-nowrap shrink-0">Outstanding {counts.outstanding>0 && <Badge variant="secondary" className="ml-1 px-1">{counts.outstanding}</Badge>}</TabsTrigger>
+            <TabsTrigger value="dueSoon" className="text-xs whitespace-nowrap shrink-0">Due Soon</TabsTrigger>
+            <TabsTrigger value="overdue" className="text-xs whitespace-nowrap shrink-0">Overdue {counts.overdue>0 && <Badge variant="secondary" className="ml-1 px-1 bg-red-600 text-white">{counts.overdue}</Badge>}</TabsTrigger>
+            <TabsTrigger value="paid" className="text-xs whitespace-nowrap shrink-0">Paid</TabsTrigger>
+            <TabsTrigger value="history" className="text-xs whitespace-nowrap shrink-0">History</TabsTrigger>
           </TabsList>
         </Tabs>
 

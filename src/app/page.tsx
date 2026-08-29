@@ -80,7 +80,7 @@ export default function Dashboard() {
           eyebrow={society?.code || "GAR001"}
           title={`Good morning, ${user?.fullName?.split(" ")[0] || "Resident"}`}
           description={`${society?.name || "Green Acres Residency"} • ${society?.city || "Chennai"} • Pilot with ${units.length} flats across 3 towers`}
-          action={<div className="flex gap-2"><Link href="/auth/sign-in"><Button variant="outline" size="sm">Switch account</Button></Link><Button size="sm" className="bg-red-600 hover:bg-red-700"><PhoneCall className="h-4 w-4 mr-2" />Emergency</Button></div>}
+          action={<div className="flex gap-2"><Link href="/auth/sign-in"><Button variant="outline" size="sm">Switch account</Button></Link><Link href="/emergency" aria-label="View emergency alerts"><Button size="sm" className="bg-red-600 hover:bg-red-700" aria-label="Emergency alerts"><PhoneCall className="h-4 w-4 mr-2" aria-hidden />Emergency</Button></Link></div>}
         />
 
         <div className="rounded-xl border bg-card px-4 py-3 flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
@@ -183,7 +183,7 @@ export default function Dashboard() {
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-sm">Helpdesk</CardTitle></CardHeader>
             <CardContent>
-              {tickets.length===0 ? <EmptyState title="No open tickets" description="Raise a ticket for plumbing, electrical or housekeeping." icon={<Wrench className="h-5 w-5" />} actionLabel="Raise ticket" onAction={()=>{}} /> : (
+              {tickets.length===0 ? <EmptyState title="No open tickets" description="Raise a ticket for plumbing, electrical or housekeeping." icon={<Wrench className="h-5 w-5" />} actionLabel="Raise ticket" href="/helpdesk/new" /> : (
                 <ul className="space-y-3">
                   {tickets.slice(0,3).map((t:any)=>(
                     <li key={t.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
@@ -200,7 +200,7 @@ export default function Dashboard() {
         <Card className="bg-amber-50 border-amber-200 dark:bg-amber-950/20">
           <CardContent className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div><p className="text-sm font-semibold">Emergency & gate</p><p className="text-xs text-muted-foreground">One-tap SOS reaches security + RWA. For gate entry, keep visitor PIN ready.</p></div>
-            <div className="flex gap-2"><Button variant="outline" size="sm"><Shield className="h-4 w-4 mr-2" />Gate directory</Button><Button size="sm" className="bg-red-600 hover:bg-red-700">SOS — Call security</Button></div>
+            <div className="flex gap-2"><Link href="/guard" aria-label="Gate directory and console"><Button variant="outline" size="sm" aria-label="Gate directory"><Shield className="h-4 w-4 mr-2" aria-hidden />Gate directory</Button></Link><Link href="/emergency" aria-label="Emergency alerts and SOS"><Button size="sm" className="bg-red-600 hover:bg-red-700" aria-label="SOS emergency alerts">SOS — View alerts</Button></Link></div>
           </CardContent>
         </Card>
       </div>

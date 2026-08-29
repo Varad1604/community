@@ -26,7 +26,7 @@ export default function HelpdeskPage(){
     <AppShell>
       <div className="max-w-4xl mx-auto space-y-4">
         <PageHeader title="Helpdesk" description="Complaints and service requests • your tickets" action={<Link href="/helpdesk/new"><Button size="sm"><Plus className="h-4 w-4 mr-1"/>New Ticket</Button></Link>} />
-        <Tabs value={tab} onValueChange={setTab}><TabsList className="grid w-full grid-cols-5"><TabsTrigger value="all">All ({items.length})</TabsTrigger><TabsTrigger value="open">Open</TabsTrigger><TabsTrigger value="assigned">Assigned</TabsTrigger><TabsTrigger value="resolved">Resolved</TabsTrigger><TabsTrigger value="closed">Closed</TabsTrigger></TabsList></Tabs>
+        <Tabs value={tab} onValueChange={setTab}><TabsList className="flex w-full overflow-x-auto gap-1 h-10 p-1 justify-start"><TabsTrigger value="all" className="text-xs whitespace-nowrap shrink-0">All ({items.length})</TabsTrigger><TabsTrigger value="open" className="text-xs whitespace-nowrap shrink-0">Open</TabsTrigger><TabsTrigger value="assigned" className="text-xs whitespace-nowrap shrink-0">Assigned</TabsTrigger><TabsTrigger value="resolved" className="text-xs whitespace-nowrap shrink-0">Resolved</TabsTrigger><TabsTrigger value="closed" className="text-xs whitespace-nowrap shrink-0">Closed</TabsTrigger></TabsList></Tabs>
         {filtered.length===0 ? <EmptyState icon={<Wrench className="h-5 w-5"/>} title="No tickets" description={tab==="all" ? "Create a complaint to get help." : `No ${tab} tickets.`} /> : (
           <div className="space-y-3">
             {filtered.map((t:any)=>(

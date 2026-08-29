@@ -49,11 +49,11 @@ export default function BookingsPage() {
         <PageHeader title="My Bookings" description="Amenity bookings • Tap to view details" />
 
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="upcoming" className="text-xs">Upcoming {counts.upcoming>0 && <Badge variant="secondary" className="ml-1 px-1">{counts.upcoming}</Badge>}</TabsTrigger>
-            <TabsTrigger value="today" className="text-xs">Today {counts.today>0 && <Badge variant="secondary" className="ml-1 px-1">{counts.today}</Badge>}</TabsTrigger>
-            <TabsTrigger value="past" className="text-xs">Past</TabsTrigger>
-            <TabsTrigger value="cancelled" className="text-xs">Cancelled</TabsTrigger>
+          <TabsList className="flex w-full overflow-x-auto gap-1 h-10 p-1 justify-start">
+            <TabsTrigger value="upcoming" className="text-xs whitespace-nowrap shrink-0">Upcoming {counts.upcoming>0 && <Badge variant="secondary" className="ml-1 px-1">{counts.upcoming}</Badge>}</TabsTrigger>
+            <TabsTrigger value="today" className="text-xs whitespace-nowrap shrink-0">Today {counts.today>0 && <Badge variant="secondary" className="ml-1 px-1">{counts.today}</Badge>}</TabsTrigger>
+            <TabsTrigger value="past" className="text-xs whitespace-nowrap shrink-0">Past</TabsTrigger>
+            <TabsTrigger value="cancelled" className="text-xs whitespace-nowrap shrink-0">Cancelled</TabsTrigger>
           </TabsList>
         </Tabs>
 

@@ -171,10 +171,11 @@ export default function GuardConsole() {
             <Card className="border-2">
               <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><QrCode className="h-5 w-5" />Verify Visitor — Pass / QR Code</CardTitle></CardHeader>
               <CardContent className="space-y-3">
+                <Label htmlFor="guard-verify-code" className="sr-only">Visitor pass code</Label>
                 <p className="text-xs text-muted-foreground">Enter 6-digit pass code or scan QR token. Large input for speed.</p>
                 <div className="flex gap-2">
-                  <Input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="e.g. A1B2C3" className="h-14 text-2xl font-mono tracking-widest text-center" autoFocus />
-                  <Button onClick={verify} className="h-14 px-8 text-base font-semibold">Verify</Button>
+                  <Input id="guard-verify-code" value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="e.g. A1B2C3" className="h-14 text-2xl font-mono tracking-widest text-center" autoFocus aria-label="Visitor pass code" />
+                  <Button onClick={verify} className="h-14 px-8 text-base font-semibold" aria-label="Verify visitor code">Verify</Button>
                 </div>
                 <p className="text-xs text-muted-foreground">QR uses same code. Camera scan not yet in this environment — enter code manually. Token verification is server-side.</p>
               </CardContent>
@@ -262,13 +263,14 @@ export default function GuardConsole() {
               <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Package className="h-4 w-4" />Record Delivery at Gate</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid sm:grid-cols-2 gap-3">
-                  <div className="space-y-1"><Label>Courier / Provider *</Label><Input value={deliveryForm.courierName} onChange={e=>setDeliveryForm({...deliveryForm, courierName:e.target.value})} placeholder="Amazon, Flipkart, BlueDart" /></div>
-                  <div className="space-y-1"><Label>AWB / Tracking (optional)</Label><Input value={deliveryForm.awb} onChange={e=>setDeliveryForm({...deliveryForm, awb:e.target.value})} placeholder="AWB123456" /></div>
+                  <div className="space-y-1"><Label htmlFor="guard-delivery-courier">Courier / Provider *</Label><Input id="guard-delivery-courier" value={deliveryForm.courierName} onChange={e=>setDeliveryForm({...deliveryForm, courierName:e.target.value})} placeholder="Amazon, Flipkart, BlueDart" /></div>
+                  <div className="space-y-1"><Label htmlFor="guard-delivery-awb">AWB / Tracking (optional)</Label><Input id="guard-delivery-awb" value={deliveryForm.awb} onChange={e=>setDeliveryForm({...deliveryForm, awb:e.target.value})} placeholder="AWB123456" /></div>
                 </div>
-                <div className="space-y-1"><Label>Destination Unit *</Label><Input value={deliveryForm.unitId} onChange={e=>setDeliveryForm({...deliveryForm, unitId:e.target.value})} placeholder="Unit ID or search below" className="font-mono text-xs" /></div>
+                <div className="space-y-1"><Label htmlFor="guard-delivery-unit">Destination Unit *</Label><Input id="guard-delivery-unit" value={deliveryForm.unitId} onChange={e=>setDeliveryForm({...deliveryForm, unitId:e.target.value})} placeholder="Unit ID or search below" className="font-mono text-xs" /></div>
                 <div className="flex gap-2">
-                  <Input value={deliveryQuery} onChange={e=>setDeliveryQuery(e.target.value)} placeholder="Search unit e.g. A-101" className="flex-1" />
-                  <Button type="button" variant="outline" onClick={searchDeliveryUnit}><Search className="h-4 w-4 mr-1" />Find</Button>
+                  <Label htmlFor="guard-delivery-search" className="sr-only">Search unit for delivery</Label>
+                  <Input id="guard-delivery-search" value={deliveryQuery} onChange={e=>setDeliveryQuery(e.target.value)} placeholder="Search unit e.g. A-101" className="flex-1" aria-label="Search unit for delivery" />
+                  <Button type="button" variant="outline" onClick={searchDeliveryUnit} aria-label="Find unit for delivery"><Search className="h-4 w-4 mr-1" aria-hidden />Find</Button>
                 </div>
                 {deliveryResults.length>0 && (
                   <div className="rounded-lg border divide-y max-h-40 overflow-auto">
@@ -308,8 +310,9 @@ export default function GuardConsole() {
               <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><HeartHandshake className="h-4 w-4" />Domestic Help — Attendance</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex gap-2">
-                  <Input value={helpQuery} onChange={e=>setHelpQuery(e.target.value)} placeholder="Search name or phone e.g. Lakshmi" className="flex-1" />
-                  <Button type="button" variant="outline" onClick={searchHelp}><Search className="h-4 w-4 mr-1" />Find</Button>
+                  <Label htmlFor="guard-help-search" className="sr-only">Search domestic help</Label>
+                  <Input id="guard-help-search" value={helpQuery} onChange={e=>setHelpQuery(e.target.value)} placeholder="Search name or phone e.g. Lakshmi" className="flex-1" aria-label="Search domestic help" />
+                  <Button type="button" variant="outline" onClick={searchHelp} aria-label="Find domestic help"><Search className="h-4 w-4 mr-1" aria-hidden />Find</Button>
                   <Button type="button" variant="ghost" onClick={()=>{ setHelpQuery(""); setHelpSearchResults([]); loadHelp(); }}>All</Button>
                 </div>
                 {(helpSearchResults.length>0 ? helpSearchResults : helpList).length===0 ? <p className="text-sm text-muted-foreground text-center py-4">No domestic help found</p> : (
@@ -356,8 +359,9 @@ export default function GuardConsole() {
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">Search registration number or unit. Society-scoped, verified at gate.</p>
                 <div className="flex gap-2">
-                  <Input value={vehicleQuery} onChange={e=>setVehicleQuery(e.target.value.toUpperCase())} placeholder="KA01AB1234 or A-101" className="font-mono flex-1" />
-                  <Button type="button" onClick={searchVehicle}><Search className="h-4 w-4 mr-1" />Verify</Button>
+                  <Label htmlFor="guard-vehicle-search" className="sr-only">Search vehicle</Label>
+                  <Input id="guard-vehicle-search" value={vehicleQuery} onChange={e=>setVehicleQuery(e.target.value.toUpperCase())} placeholder="KA01AB1234 or A-101" className="font-mono flex-1" aria-label="Search vehicle by number or unit" />
+                  <Button type="button" onClick={searchVehicle} aria-label="Verify vehicle"><Search className="h-4 w-4 mr-1" aria-hidden />Verify</Button>
                 </div>
                 {vehicleResults.length>0 && (
                   <div className="space-y-2">
@@ -383,20 +387,21 @@ export default function GuardConsole() {
               <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><UserPlus className="h-4 w-4" />Walk-in Visitor (no invite)</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid sm:grid-cols-2 gap-3">
-                  <div className="space-y-1"><Label>Visitor name *</Label><Input value={walkin.visitorName} onChange={e=>setWalkin({...walkin, visitorName:e.target.value})} placeholder="Name" /></div>
-                  <div className="space-y-1"><Label>Phone *</Label><Input value={walkin.phone} onChange={e=>setWalkin({...walkin, phone:e.target.value})} placeholder="98765 43210" /></div>
+                  <div className="space-y-1"><Label htmlFor="guard-walkin-name">Visitor name *</Label><Input id="guard-walkin-name" value={walkin.visitorName} onChange={e=>setWalkin({...walkin, visitorName:e.target.value})} placeholder="Name" /></div>
+                  <div className="space-y-1"><Label htmlFor="guard-walkin-phone">Phone *</Label><Input id="guard-walkin-phone" value={walkin.phone} onChange={e=>setWalkin({...walkin, phone:e.target.value})} placeholder="98765 43210" /></div>
                 </div>
                 <div className="grid sm:grid-cols-2 gap-3">
-                  <div className="space-y-1"><Label>Purpose *</Label><Input value={walkin.purpose} onChange={e=>setWalkin({...walkin, purpose:e.target.value})} placeholder="Guest / Delivery" /></div>
-                  <div className="space-y-1"><Label>Host unit *</Label>
+                  <div className="space-y-1"><Label htmlFor="guard-walkin-purpose">Purpose *</Label><Input id="guard-walkin-purpose" value={walkin.purpose} onChange={e=>setWalkin({...walkin, purpose:e.target.value})} placeholder="Guest / Delivery" /></div>
+                  <div className="space-y-1"><Label htmlFor="guard-walkin-unit">Host unit *</Label>
                     <div className="flex gap-2">
-                      <Input value={walkin.unitId} onChange={e=>setWalkin({...walkin, unitId:e.target.value})} placeholder="Unit ID or search below" className="font-mono text-xs" />
+                      <Input id="guard-walkin-unit" value={walkin.unitId} onChange={e=>setWalkin({...walkin, unitId:e.target.value})} placeholder="Unit ID or search below" className="font-mono text-xs" />
                     </div>
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Input value={residentQuery} onChange={e=>setResidentQuery(e.target.value)} placeholder="Search unit / resident e.g. A-101" className="flex-1" />
-                  <Button type="button" variant="outline" onClick={searchResident}><Search className="h-4 w-4 mr-1" />Find</Button>
+                  <Label htmlFor="guard-walkin-search" className="sr-only">Search unit or resident</Label>
+                  <Input id="guard-walkin-search" value={residentQuery} onChange={e=>setResidentQuery(e.target.value)} placeholder="Search unit / resident e.g. A-101" className="flex-1" aria-label="Search unit or resident for walk-in" />
+                  <Button type="button" variant="outline" onClick={searchResident} aria-label="Find resident unit"><Search className="h-4 w-4 mr-1" aria-hidden />Find</Button>
                 </div>
                 {residentResults.length>0 && (
                   <div className="rounded-lg border divide-y max-h-40 overflow-auto">

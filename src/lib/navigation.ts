@@ -14,6 +14,7 @@ export const residentNav: NavSection[] = [
   { title: "Society", items: [
     { label: "Parking", href: "/parking", icon: Building2 },
     { label: "Amenities", href: "/amenities", icon: Calendar },
+    { label: "Bookings", href: "/bookings", icon: Calendar },
     { label: "Bills & Payments", href: "/bills", icon: Wallet },
     { label: "Helpdesk", href: "/helpdesk", icon: Wrench },
   ]},
@@ -31,16 +32,14 @@ export const residentNav: NavSection[] = [
 
 export const guardNav: NavSection[] = [
   { title: "Gate", items: [
-    { label: "Gate", href: "/guard", icon: Shield },
+    { label: "Gate Console", href: "/guard", icon: Shield },
     { label: "Emergency", href: "/emergency", icon: Bell },
-    { label: "Visitors", href: "/guard/visitors", icon: Users },
-    { label: "Deliveries", href: "/guard/deliveries", icon: Truck },
-    { label: "Vehicles", href: "/guard/vehicles", icon: Building2 },
   ]},
-  { title: "Records", items: [
-    { label: "Domestic Help", href: "/guard/help", icon: HeartHandshake },
-    { label: "Residents", href: "/guard/residents", icon: Users },
-    { label: "Activity", href: "/guard/activity", icon: ScrollText },
+  { title: "Operations", items: [
+    { label: "Visitors", href: "/guard", icon: Users },
+    { label: "Deliveries", href: "/guard", icon: Truck },
+    { label: "Vehicles", href: "/guard", icon: Building2 },
+    { label: "Domestic Help", href: "/guard", icon: HeartHandshake },
   ]},
 ];
 
