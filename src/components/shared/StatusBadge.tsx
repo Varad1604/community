@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     PAID: "bg-emerald-100 text-emerald-900 border-emerald-200",
+    SUCCESS: "bg-emerald-100 text-emerald-900 border-emerald-200",
     COLLECTED: "bg-emerald-100 text-emerald-900 border-emerald-200",
     CONFIRMED: "bg-emerald-100 text-emerald-900 border-emerald-200",
     CHECKED_OUT: "bg-emerald-100 text-emerald-900 border-emerald-200",
@@ -18,6 +19,7 @@ export function StatusBadge({ status }: { status: string }) {
     CANCELLED: "bg-red-100 text-red-900 border-red-200",
     EXPIRED: "bg-red-100 text-red-900 border-red-200",
     RETURNED: "bg-red-100 text-red-900 border-red-200",
+    FAILED: "bg-red-100 text-red-900 border-red-200",
     OPEN: "bg-blue-100 text-blue-900 border-blue-200",
     IN_PROGRESS: "bg-blue-100 text-blue-900 border-blue-200",
     ISSUED: "bg-blue-100 text-blue-900 border-blue-200",

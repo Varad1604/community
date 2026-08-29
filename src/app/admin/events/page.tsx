@@ -53,7 +53,7 @@ export default function AdminEvents() {
             {items.map((e:any)=>(
               <div key={e.id} className="flex justify-between p-3">
                 <div><p className="text-sm font-medium">{e.title}</p><p className="text-xs text-muted-foreground">{new Date(e.startsAt).toLocaleString()} • {e.location || "—"}</p></div>
-                <div className="flex gap-1"><Button variant="ghost" size="icon" onClick={()=>{ setEditing(e); setForm({ title:e.title, description:e.description||"", startsAt: e.startsAt? new Date(e.startsAt).toISOString().slice(0,16):"", endsAt: e.endsAt? new Date(e.endsAt).toISOString().slice(0,16):"", location:e.location||""}); }}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={()=>remove(e.id)}><Trash2 className="h-4 w-4" /></Button></div>
+                <div className="flex gap-1"><Button variant="ghost" size="icon" onClick={()=>{ setEditing(e); setForm({ title:e.title, description:e.description||"", startsAt: e.startsAt? new Date(e.startsAt).toISOString().slice(0,16):"", endsAt: e.endsAt? new Date(e.endsAt).toISOString().slice(0,16):"", location:e.location||""}); }} aria-label="Edit"><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={()=>remove(e.id)} aria-label="Delete"><Trash2 className="h-4 w-4" /></Button></div>
               </div>
             ))}
             {items.length===0 && <p className="text-sm text-muted-foreground text-center py-8">No events</p>}

@@ -52,7 +52,7 @@ export default function AdminAnnouncements() {
             {items.map((a:any)=>(
               <div key={a.id} className="flex justify-between p-3 hover:bg-muted/20">
                 <div className="min-w-0"><p className="text-sm font-medium truncate">{a.title}</p><p className="text-xs text-muted-foreground line-clamp-1">{a.body}</p><p className="text-xs text-muted-foreground">{new Date(a.createdAt).toLocaleString()} <Badge variant="outline" className="ml-1">{a.priority}</Badge></p></div>
-                <div className="flex gap-1 shrink-0"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={()=>startEdit(a)}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" onClick={()=>remove(a.id)}><Trash2 className="h-4 w-4" /></Button></div>
+                <div className="flex gap-1 shrink-0"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={()=>startEdit(a)} aria-label="Edit"><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={()=>remove(a.id)} aria-label="Delete"><Trash2 className="h-4 w-4" /></Button></div>
               </div>
             ))}
             {items.length===0 && <p className="text-sm text-muted-foreground text-center py-8">No announcements</p>}

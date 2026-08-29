@@ -3,12 +3,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/shared/AppShell";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, LoadingSkeleton } from "@/components/shared/EmptyState";
-import { Wrench, Plus, Clock } from "lucide-react";
+import { ListCard } from "@/components/shared/ListCard";
+import { Wrench, Plus } from "lucide-react";
 export default function HelpdeskPage(){
   const [items,setItems]=useState<any[]>([]);
   const [loading,setLoading]=useState(true);
@@ -27,19 +26,18 @@ export default function HelpdeskPage(){
       <div className="max-w-4xl mx-auto space-y-4">
         <PageHeader title="Helpdesk" description="Complaints and service requests • your tickets" action={<Link href="/helpdesk/new"><Button size="sm"><Plus className="h-4 w-4 mr-1"/>New Ticket</Button></Link>} />
         <Tabs value={tab} onValueChange={setTab}><TabsList className="flex w-full overflow-x-auto gap-1 h-10 p-1 justify-start"><TabsTrigger value="all" className="text-xs whitespace-nowrap shrink-0">All ({items.length})</TabsTrigger><TabsTrigger value="open" className="text-xs whitespace-nowrap shrink-0">Open</TabsTrigger><TabsTrigger value="assigned" className="text-xs whitespace-nowrap shrink-0">Assigned</TabsTrigger><TabsTrigger value="resolved" className="text-xs whitespace-nowrap shrink-0">Resolved</TabsTrigger><TabsTrigger value="closed" className="text-xs whitespace-nowrap shrink-0">Closed</TabsTrigger></TabsList></Tabs>
-        {filtered.length===0 ? <EmptyState icon={<Wrench className="h-5 w-5"/>} title="No tickets" description={tab==="all" ? "Create a complaint to get help." : `No ${tab} tickets.`} /> : (
+        {filtered.length===0 ? <EmptyState icon={<Wrench className="h-5 w-5"/>} title="No tickets" description={tab==="all" ? "Create a complaint to get help." : `No ${tab} tickets.`} href={tab==="all" ? "/helpdesk/new" : undefined} /> : (
           <div className="space-y-3">
             {filtered.map((t:any)=>(
-              <Link key={t.id} href={`/helpdesk/${t.id}`}>
-                <Card className="hover:bg-muted/30">
-                  <CardContent className="p-4">
-                    <div className="flex justify-between gap-2">
-                      <div className="min-w-0"><p className="text-sm font-semibold truncate">{t.title}</p><p className="text-xs text-muted-foreground">{t.category} • {t.priority} • {t.status}</p><p className="text-xs text-muted-foreground flex items-center gap-1 mt-1"><Clock className="h-3 w-3"/>{new Date(t.createdAt).toLocaleString()}</p></div>
-                      <Badge variant={t.status==="OPEN"?"destructive":t.status==="RESOLVED"?"default":"secondary"}>{t.status}</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+              <ListCard
+                key={t.id}
+                href={`/helpdesk/${t.id}`}
+                title={t.title}
+                subtitle={`${t.category} • ${t.priority}`}
+                meta={new Date(t.createdAt).toLocaleString()}
+                status={t.status}
+                categoryBadge={t.category}
+              />
             ))}
           </div>
         )}

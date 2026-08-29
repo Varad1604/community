@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import { toast } from "sonner";
 import { Wallet, Plus } from "lucide-react";
 import { amountToPaise } from "@/lib/payments/provider";
@@ -150,7 +151,7 @@ export default function AdminBills(){
                     <p className="text-sm font-medium">{b.title} • {b.unitId.slice(0,8)}</p>
                     <p className="text-xs text-muted-foreground">{b.periodStart} → {b.periodEnd} • Due {b.dueDate} • {formatINR(b.total)}</p>
                   </div>
-                  <Badge variant={b.status==="PAID" ? "default" : b.status==="OVERDUE" ? "destructive" : "secondary"}>{b.status}</Badge>
+                  <StatusBadge status={b.status} />
                 </div>
               ))}
               {filtered.length===0 && <p className="text-sm text-muted-foreground text-center py-8">No bills for filter</p>}
@@ -166,7 +167,7 @@ export default function AdminBills(){
                 {payments.slice(0,10).map((p:any)=>(
                   <div key={p.id} className="flex justify-between px-2 py-2">
                     <div><p className="text-sm font-medium">{formatINR(p.amount)} • {p.method} • {p.status}</p><p className="text-xs text-muted-foreground">{new Date(p.createdAt).toLocaleString()} • {p.gatewayRef?.slice(0,12) || "—"}</p></div>
-                    <Badge variant={p.status==="SUCCESS" ? "default" : "secondary"}>{p.status}</Badge>
+                    <StatusBadge status={p.status} />
                   </div>
                 ))}
               </div>

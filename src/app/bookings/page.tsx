@@ -3,12 +3,11 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/shared/AppShell";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, LoadingSkeleton } from "@/components/shared/EmptyState";
-import { Calendar, Clock } from "lucide-react";
+import { ListCard } from "@/components/shared/ListCard";
+import { Calendar } from "lucide-react";
 
 export default function BookingsPage() {
   const [items, setItems] = useState<any[]>([]);
@@ -62,20 +61,14 @@ export default function BookingsPage() {
         ) : (
           <div className="space-y-3">
             {filtered.map(({booking, amenity, slot, unit}:any)=>(
-              <Link key={booking.id} href={`/bookings/${booking.id}`}>
-                <Card className="hover:bg-muted/30">
-                  <CardContent className="p-4">
-                    <div className="flex justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold">{amenity?.name || booking.amenityId.slice(0,8)}</p>
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3" />{booking.bookingDate} • {slot ? `${slot.startTime}–${slot.endTime}` : "No slot"}</p>
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />Unit {unit?.number || booking.unitId.slice(0,8)} • {new Date(booking.createdAt).toLocaleDateString()}</p>
-                      </div>
-                      <Badge variant={booking.status==="CANCELLED" ? "outline" : booking.status==="CONFIRMED" ? "default" : "secondary"}>{booking.status}</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+              <ListCard
+                key={booking.id}
+                href={`/bookings/${booking.id}`}
+                title={amenity?.name || booking.amenityId.slice(0,8)}
+                subtitle={`${booking.bookingDate} • ${slot ? `${slot.startTime}–${slot.endTime}` : "No slot"}`}
+                meta={`Unit ${unit?.number || booking.unitId.slice(0,8)} • ${new Date(booking.createdAt).toLocaleDateString()}`}
+                status={booking.status}
+              />
             ))}
           </div>
         )}
