@@ -7,7 +7,15 @@ import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
 
 import { amountToPaise } from "@/lib/payments/provider";
-function isDecimal(s: string){ try { const p = amountToPaise(s); return p >= 0; } catch { return false; } }
+function paiseAllowZero(s: string): number {
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) throw new Error("Invalid amount");
+  const [intPart, decPart = ""] = s.split(".");
+  const paiseStr = intPart + decPart.padEnd(2, "0").slice(0, 2);
+  const paise = parseInt(paiseStr, 10);
+  if (isNaN(paise) || paise < 0) throw new Error("Invalid amount");
+  return paise;
+}
+function isDecimal(s: string){ try { paiseAllowZero(s); return true; } catch { return false; } }
 
 export async function GET() {
   const auth = await requireAuthAndSociety("bill:read");
@@ -53,9 +61,9 @@ export async function POST(req: Request) {
     if (new Date(parsed.data.dueDate) <= new Date(parsed.data.periodEnd)) return NextResponse.json({ error:"dueDate must be after periodEnd" }, { status:400 });
     if (new Date(parsed.data.periodStart) > new Date(parsed.data.periodEnd)) return NextResponse.json({ error:"periodStart must be before periodEnd" }, { status:400 });
     try {
-      const totalPaise = amountToPaise(parsed.data.total);
-      const subPaise = amountToPaise(parsed.data.subtotal);
-      const taxPaise = amountToPaise(parsed.data.tax || "0.00");
+      const totalPaise = paiseAllowZero(parsed.data.total);
+      const subPaise = paiseAllowZero(parsed.data.subtotal);
+      const taxPaise = parsed.data.tax ? paiseAllowZero(parsed.data.tax) : 0;
       if (totalPaise !== subPaise + taxPaise) return NextResponse.json({ error:"total must equal subtotal + tax" }, { status:400 });
     } catch { return NextResponse.json({ error:"Invalid amount" }, { status:400 }); }
 

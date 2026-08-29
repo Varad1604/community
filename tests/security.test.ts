@@ -1,4 +1,4 @@
-import { db } from "../src/lib/db";
+import { ownerDb as db } from "../src/lib/db";
 import { users, societies, userSocietyRoles, units, buildings, floors } from "../src/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { signJwt } from "../src/lib/auth/jwt";

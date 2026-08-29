@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { db } from "@/lib/db";
+import { db, ownerDb } from "@/lib/db";
 import { userSocietyRoles, units } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getSession } from "./auth/session";
@@ -9,7 +9,7 @@ export async function getAuthorizedSocietyId(): Promise<string | null> {
   if (!sess) return null;
   const store = await cookies();
   const active = store.get("active_society")?.value;
-  const roles = await db.select().from(userSocietyRoles).where(eq(userSocietyRoles.userId, sess.userId));
+  const roles = await ownerDb.select().from(userSocietyRoles).where(eq(userSocietyRoles.userId, sess.userId));
   if (roles.length === 0) return null;
   if (active && roles.some(r => r.societyId === active)) return active;
   return roles[0].societyId;
@@ -22,12 +22,12 @@ export async function requireSocietyId(): Promise<string> {
 }
 
 export async function verifyUnitBelongsToSociety(unitId: string, societyId: string) {
-  const [unit] = await db.select().from(units).where(and(eq(units.id, unitId), eq(units.societyId, societyId)));
+  const [unit] = await ownerDb.select().from(units).where(and(eq(units.id, unitId), eq(units.societyId, societyId)));
   if (!unit) throw new Error("Unit does not belong to society");
   return unit;
 }
 
 export async function getUserRoles(userId: string, societyId: string) {
-  const rows = await db.select().from(userSocietyRoles).where(and(eq(userSocietyRoles.userId, userId), eq(userSocietyRoles.societyId, societyId)));
+  const rows = await ownerDb.select().from(userSocietyRoles).where(and(eq(userSocietyRoles.userId, userId), eq(userSocietyRoles.societyId, societyId)));
   return rows.map(r => r.role);
 }

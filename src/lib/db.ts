@@ -6,6 +6,9 @@ const runtimeUrl = process.env.APP_DATABASE_URL || process.env.DATABASE_URL!;
 const pool = new Pool({
   connectionString: runtimeUrl,
 });
-
+const ownerPool = new Pool({
+  connectionString: process.env.DATABASE_URL!,
+});
 export const db = drizzle(pool, { schema });
-export { pool };
+export const ownerDb = drizzle(ownerPool, { schema });
+export { pool, ownerPool };

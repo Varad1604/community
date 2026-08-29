@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { payments, bills, notifications } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, ownerDb } from "@/lib/db";
 import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
 import { getPaymentProvider, amountToPaise } from "@/lib/payments/provider";
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const [payment] = await db.select().from(payments).where(eq(payments.gatewayRef, razorpayOrderId));
+    const [payment] = await ownerDb.select().from(payments).where(eq(payments.gatewayRef, razorpayOrderId));
     if (!payment) {
       return NextResponse.json({ error: "Payment not found for order" }, { status: 404 });
     }

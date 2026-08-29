@@ -1,4 +1,4 @@
-import { db } from "../src/lib/db";
+import { ownerDb as db } from "../src/lib/db";
 import { users, societies, userSocietyRoles, units, buildings, floors, unitMembers, vehicles, parkingSlots } from "../src/lib/db/schema";
 import { signJwt } from "../src/lib/auth/jwt";
 import { randomInt } from "crypto";
