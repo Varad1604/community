@@ -36,12 +36,14 @@ export default function GuardConsole() {
   const [helpSearchResults, setHelpSearchResults] = useState<any[]>([]);
   const [vehicleQuery, setVehicleQuery] = useState("");
   const [vehicleResults, setVehicleResults] = useState<any[]>([]);
+  const [emergencies, setEmergencies] = useState<any[]>([]);
 
   useEffect(()=>{
     const t = setInterval(()=>setTime(new Date()), 1000);
     fetch("/api/auth/me").then(r=>r.json()).then(d=> setGuard(d.user)).catch(()=>{});
     fetch("/api/societies").then(r=>r.json()).then(d=> setSociety(Array.isArray(d)? d[0]: null)).catch(()=>{});
     fetch("/api/gates").then(r=>r.json()).then(d=>{ if(Array.isArray(d)){ setGates(d); if(d[0]) setSelectedGate(d[0].id); }}).catch(()=>{});
+    fetch("/api/emergency").then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setEmergencies(d.filter((a:any)=>a.status==="OPEN")); }).catch(()=>{});
     loadExpected(); loadInside(); loadDeliveries(); loadHelp(); loadHelpAttendance();
     const saved = localStorage.getItem("guard_gate");
     if (saved) setSelectedGate(saved);
@@ -129,6 +131,15 @@ export default function GuardConsole() {
   return (
     <AppShell>
       <div className="max-w-6xl mx-auto space-y-4">
+        {emergencies.length>0 && (
+          <Card className="border-red-600 bg-red-50 dark:bg-red-950/20">
+            <CardContent className="p-3 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              <p className="text-sm font-bold text-red-700">Active Emergency: {emergencies[0].type} • {new Date(emergencies[0].createdAt).toLocaleString()}</p>
+              <Badge variant="destructive" className="ml-auto">OPEN</Badge>
+            </CardContent>
+          </Card>
+        )}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b pb-3">
           <div>
             <h1 className="text-xl font-semibold flex items-center gap-2"><Shield className="h-5 w-5" />Gate Console</h1>

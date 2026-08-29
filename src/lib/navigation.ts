@@ -18,9 +18,11 @@ export const residentNav: NavSection[] = [
     { label: "Helpdesk", href: "/helpdesk", icon: Wrench },
   ]},
   { title: "Community", items: [
-    { label: "Bookings", href: "/bookings", icon: Calendar },
     { label: "Announcements", href: "/announcements", icon: Megaphone },
-    { label: "Community", href: "/community", icon: Users },
+    { label: "Polls", href: "/community/polls", icon: Users },
+    { label: "Events", href: "/events", icon: Calendar },
+    { label: "Emergency", href: "/emergency", icon: Bell },
+    { label: "Notifications", href: "/notifications", icon: Bell },
   ]},
   { title: "You", items: [
     { label: "Profile", href: "/profile", icon: User },
@@ -30,6 +32,7 @@ export const residentNav: NavSection[] = [
 export const guardNav: NavSection[] = [
   { title: "Gate", items: [
     { label: "Gate", href: "/guard", icon: Shield },
+    { label: "Emergency", href: "/emergency", icon: Bell },
     { label: "Visitors", href: "/guard/visitors", icon: Users },
     { label: "Deliveries", href: "/guard/deliveries", icon: Truck },
     { label: "Vehicles", href: "/guard/vehicles", icon: Building2 },
@@ -59,7 +62,11 @@ export const adminNav: NavSection[] = [
   ]},
   { title: "Engage", items: [
     { label: "Announcements", href: "/admin/announcements", icon: Megaphone },
+    { label: "Polls", href: "/admin/polls", icon: Users },
+    { label: "Events", href: "/admin/events", icon: Calendar },
+    { label: "Emergency", href: "/admin/emergency", icon: Bell },
     { label: "Community", href: "/admin/community", icon: Bell },
+    { label: "Notifications", href: "/notifications", icon: Bell },
     { label: "Reports", href: "/admin/reports", icon: BarChart3 },
     { label: "Audit Logs", href: "/admin/audit", icon: ScrollText },
   ]},
@@ -73,8 +80,8 @@ export function getNavForRoles(roles: string[]) {
 
 export const bottomNavItems = [
   { label: "Home", href: "/", icon: Home },
-  { label: "Visitors", href: "/visitors", icon: Users },
-  { label: "Bills", href: "/bills", icon: Wallet },
-  { label: "Helpdesk", href: "/helpdesk", icon: Wrench },
-  { label: "Profile", href: "/profile", icon: User },
+  { label: "Announcements", href: "/announcements", icon: Megaphone },
+  { label: "Polls", href: "/community/polls", icon: Users },
+  { label: "Events", href: "/events", icon: Calendar },
+  { label: "Alerts", href: "/notifications", icon: Bell },
 ];
