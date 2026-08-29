@@ -23,7 +23,7 @@ export default function EventsPage() {
       <div className="max-w-3xl mx-auto space-y-4">
         <PageHeader title="Events" description="Community gatherings • upcoming and past" />
         <Tabs value={tab} onValueChange={setTab}><TabsList className="grid w-full grid-cols-2"><TabsTrigger value="upcoming">Upcoming ({upcoming.length})</TabsTrigger><TabsTrigger value="past">Past ({past.length})</TabsTrigger></TabsList></Tabs>
-        {list.length===0 ? <EmptyState icon={<Calendar className="h-5 w-5" />} title={tab==="upcoming"?"No upcoming events":"No past events"} description="Events from management appear here." /> : (
+        {list.length===0 ? <EmptyState icon={<Calendar className="h-5 w-5" />} title={tab==="upcoming"?"No upcoming events":"No past events"} description={tab==="upcoming" ? "No upcoming events — society admin publishes community gatherings here. Check back soon." : "No past events — completed gatherings will appear here."} /> : (
           <div className="space-y-3">
             {list.map((e:any)=>(
               <Link key={e.id} href={`/events/${e.id}`}>

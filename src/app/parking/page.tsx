@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/shared/AppShell";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, LoadingSkeleton } from "@/components/shared/EmptyState";
@@ -19,10 +20,7 @@ export default function ParkingPage() {
   return (
     <AppShell>
       <div className="max-w-4xl mx-auto space-y-4">
-        <div className="border-b pb-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Parking</h1>
-          <p className="text-sm text-muted-foreground">Slots assigned to your unit • Contact admin for allocation</p>
-        </div>
+        <PageHeader title="Parking" description="Slots assigned to your unit • Contact admin for allocation" />
 
         {slots.length===0 ? (
           <EmptyState icon={<Building2 className="h-5 w-5" />} title="No parking assigned" description="Parking is assigned by society admin to your unit. Allocated slots appear here." />

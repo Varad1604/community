@@ -11,7 +11,23 @@ import { Bell, CheckCheck, Clock } from "lucide-react";
 import { toast } from "sonner";
 function relatedHref(n: any) {
   if (!n.relatedEntity || !n.relatedId) return null;
-  const m: Record<string, string> = { announcement: `/announcements/${n.relatedId}`, bill: `/bills/${n.relatedId}`, payment: `/bills/${n.relatedId}`, booking: `/bookings/${n.relatedId}`, poll: `/community/polls/${n.relatedId}`, event: `/events/${n.relatedId}`, delivery: `/deliveries/${n.relatedId}` };
+  const m: Record<string, string> = {
+    announcement: `/announcements/${n.relatedId}`,
+    bill: `/bills/${n.relatedId}`,
+    payment: `/bills/${n.relatedId}`,
+    booking: `/bookings/${n.relatedId}`,
+    poll: `/community/polls/${n.relatedId}`,
+    event: `/events/${n.relatedId}`,
+    delivery: `/deliveries/${n.relatedId}`,
+    ticket: `/helpdesk/${n.relatedId}`,
+    helpdesk: `/helpdesk/${n.relatedId}`,
+    emergency: `/emergency`,
+    vehicle: `/vehicles/${n.relatedId}`,
+    parking: `/parking`,
+    help: `/help/${n.relatedId}`,
+    visitor: `/visitors/${n.relatedId}`,
+    invite: `/visitors/${n.relatedId}`,
+  };
   return m[n.relatedEntity] || null;
 }
 export default function NotificationsPage() {

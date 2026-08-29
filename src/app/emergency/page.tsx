@@ -17,7 +17,7 @@ export default function EmergencyPage() {
     <AppShell>
       <div className="max-w-3xl mx-auto space-y-4">
         <PageHeader title="Emergency Alerts" description="Active alerts from society management" />
-        {active.length===0 ? <Card className="border-green-200 bg-green-50"><CardContent className="p-4 text-center"><p className="text-sm font-medium text-green-700">No active emergency. All clear.</p></CardContent></Card> : (
+        {active.length===0 ? <Card className="border-green-200 bg-green-50"><CardContent className="p-4 text-center"><p className="text-sm font-medium text-green-700">No active emergency. All clear.</p><p className="text-xs text-muted-foreground mt-1">Emergency updates from management appear here. For immediate help, contact security via the guard console.</p></CardContent></Card> : (
           <div className="space-y-3">
             {active.map((a:any)=>(
               <Card key={a.id} className="border-l-4 border-l-red-600 bg-red-50">
@@ -42,7 +42,6 @@ export default function EmergencyPage() {
             </CardContent>
           </Card>
         )}
-        {items.length===0 && <EmptyState icon={<Siren className="h-5 w-5" />} title="No alerts" description="Emergency alerts appear here when active." />}
       </div>
     </AppShell>
   );

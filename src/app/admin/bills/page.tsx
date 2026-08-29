@@ -82,25 +82,38 @@ export default function AdminBills(){
 
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Plus className="h-4 w-4" />Create Bill</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              <div className="space-y-1"><Label>Unit *</Label>
-                <Select value={form.unitId} onValueChange={v=>setForm({...form, unitId:v})}>
-                  <SelectTrigger><SelectValue placeholder="Select unit" /></SelectTrigger>
-                  <SelectContent>
-                    {units.slice(0,20).map((u:any)=><SelectItem key={u.id} value={u.id}>{u.number}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+          <CardContent className="space-y-4">
+            <fieldset className="space-y-3">
+              <legend className="text-xs font-semibold text-muted-foreground">Billing details</legend>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="space-y-1"><Label>Unit *</Label>
+                  <Select value={form.unitId} onValueChange={v=>setForm({...form, unitId:v})}>
+                    <SelectTrigger><SelectValue placeholder="Select unit" /></SelectTrigger>
+                    <SelectContent>
+                      {units.slice(0,20).map((u:any)=><SelectItem key={u.id} value={u.id}>{u.number}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1"><Label>Title *</Label><Input value={form.title} onChange={e=>setForm({...form, title:e.target.value})} placeholder="Maintenance" /></div>
               </div>
-              <div className="space-y-1"><Label>Title *</Label><Input value={form.title} onChange={e=>setForm({...form, title:e.target.value})} placeholder="Maintenance" /></div>
-              <div className="space-y-1"><Label>Due Date *</Label><Input type="date" value={form.dueDate} onChange={e=>setForm({...form, dueDate:e.target.value})} /></div>
-              <div className="space-y-1"><Label>Period Start *</Label><Input type="date" value={form.periodStart} onChange={e=>setForm({...form, periodStart:e.target.value})} /></div>
-              <div className="space-y-1"><Label>Period End *</Label><Input type="date" value={form.periodEnd} onChange={e=>setForm({...form, periodEnd:e.target.value})} /></div>
-              <div className="space-y-1"><Label>Subtotal *</Label><Input value={form.subtotal} onChange={e=>setForm({...form, subtotal:e.target.value})} placeholder="3500.00" /></div>
-              <div className="space-y-1"><Label>Tax</Label><Input value={form.tax} onChange={e=>setForm({...form, tax:e.target.value})} placeholder="630.00" /></div>
-              <div className="space-y-1"><Label>Total *</Label><Input value={form.total} onChange={e=>setForm({...form, total:e.target.value})} placeholder="4130.00" /></div>
-            </div>
-            <p className="text-xs text-muted-foreground">Amounts as decimal strings (e.g. 4130.00). Server validates total = subtotal + tax, dueDate after periodEnd.</p>
+            </fieldset>
+            <fieldset className="space-y-3">
+              <legend className="text-xs font-semibold text-muted-foreground">Period</legend>
+              <div className="grid sm:grid-cols-3 gap-3">
+                <div className="space-y-1"><Label>Period Start *</Label><Input type="date" value={form.periodStart} onChange={e=>setForm({...form, periodStart:e.target.value})} /></div>
+                <div className="space-y-1"><Label>Period End *</Label><Input type="date" value={form.periodEnd} onChange={e=>setForm({...form, periodEnd:e.target.value})} /></div>
+                <div className="space-y-1"><Label>Due Date *</Label><Input type="date" value={form.dueDate} onChange={e=>setForm({...form, dueDate:e.target.value})} /></div>
+              </div>
+            </fieldset>
+            <fieldset className="space-y-3">
+              <legend className="text-xs font-semibold text-muted-foreground">Amounts</legend>
+              <div className="grid sm:grid-cols-3 gap-3">
+                <div className="space-y-1"><Label>Subtotal *</Label><Input inputMode="decimal" value={form.subtotal} onChange={e=>setForm({...form, subtotal:e.target.value})} placeholder="3500.00" /></div>
+                <div className="space-y-1"><Label>Tax</Label><Input inputMode="decimal" value={form.tax} onChange={e=>setForm({...form, tax:e.target.value})} placeholder="630.00" /></div>
+                <div className="space-y-1"><Label>Total *</Label><Input inputMode="decimal" value={form.total} onChange={e=>setForm({...form, total:e.target.value})} placeholder="4130.00" /></div>
+              </div>
+            </fieldset>
+            <p className="text-xs text-muted-foreground">Amounts as decimal strings (e.g. 4130.00). Server validates total = subtotal + tax, dueDate after periodEnd. Paise-exact.</p>
             <Button onClick={createBill} disabled={loading} size="sm">{loading ? "Creating..." : "Create Bill"}</Button>
           </CardContent>
         </Card>

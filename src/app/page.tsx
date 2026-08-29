@@ -148,7 +148,7 @@ export default function Dashboard() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-sm">Bills & payments</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Bills</CardTitle></CardHeader>
             <CardContent>
               {bills.length===0 ? <EmptyState title="No outstanding bills" description="Maintenance bills appear here when issued by accounts." icon={<Wallet className="h-5 w-5" />} /> : (
                 <ul className="space-y-3">

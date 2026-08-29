@@ -18,7 +18,7 @@ export default function AnnouncementsPage() {
     <AppShell>
       <div className="max-w-4xl mx-auto space-y-4">
         <PageHeader title="Announcements" description="Society updates • newest first" />
-        {items.length===0 ? <EmptyState icon={<Megaphone className="h-5 w-5" />} title="No announcements" description="Announcements from management appear here." /> : (
+        {items.length===0 ? <EmptyState icon={<Megaphone className="h-5 w-5" />} title="No announcements yet" description="Society admin publishes updates here. You'll be notified when new announcements arrive." /> : (
           <div className="space-y-3">
             {items.map((a:any)=>(
               <Link key={a.id} href={`/announcements/${a.id}`}>
