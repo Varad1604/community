@@ -10,8 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Wallet, Plus } from "lucide-react";
+import { amountToPaise } from "@/lib/payments/provider";
 
 function formatINR(s:string){ const n=parseFloat(s); return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(n); }
+function paiseToString(p:number){ return (p/100).toFixed(2); }
 
 export default function AdminBills(){
   const [bills, setBills]=useState<any[]>([]);
@@ -36,11 +38,11 @@ export default function AdminBills(){
   useEffect(()=>{ load(); }, []);
 
   const kpis = useMemo(()=>{
-    const totalBilled = bills.reduce((sum,b)=> sum + parseFloat(b.total), 0);
+    const totalPaise = bills.reduce((sum,b)=> sum + amountToPaise(b.total), 0);
     const paidBills = bills.filter(b=>b.status==="PAID").length;
     const overdue = bills.filter(b=> new Date(b.dueDate) < new Date(new Date().setHours(0,0,0,0)) && b.status!=="PAID").length;
-    const outstanding = bills.filter(b=> b.status!=="PAID").reduce((sum,b)=> sum + parseFloat(b.total), 0) - payments.filter(p=>p.status==="SUCCESS").reduce((sum,p)=> sum + parseFloat(p.amount), 0);
-    return { totalBilled, paidBills, overdue, outstanding: Math.max(0, outstanding) };
+    const outstandingPaise = bills.filter(b=> b.status!=="PAID").reduce((sum,b)=> sum + amountToPaise(b.total), 0) - payments.filter(p=>p.status==="SUCCESS").reduce((sum,p)=> sum + amountToPaise(p.amount), 0);
+    return { totalBilled: totalPaise/100, paidBills, overdue, outstanding: Math.max(0, outstandingPaise)/100 };
   }, [bills, payments]);
 
   const filtered = bills.filter(b=>{

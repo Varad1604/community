@@ -6,7 +6,8 @@ import { z } from "zod";
 import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
 
-function isDecimal(s:string){ return /^\d+(\.\d{1,2})?$/.test(s) && parseFloat(s) > 0; }
+import { amountToPaise } from "@/lib/payments/provider";
+function isDecimal(s:string){ try { const p = amountToPaise(s); return p > 0; } catch { return false; } }
 
 export async function GET() {
   const auth = await requireAuthAndSociety("payment:read");
@@ -59,11 +60,12 @@ export async function POST(req: Request) {
       if (bill.unitId!==unitId && !isPrivileged) throw new Error("Bill does not belong to unit");
 
       const amountStr = parsed.data.amount;
-      const billTotal = parseFloat(bill.total);
+      const billPaise = amountToPaise(bill.total);
       const existing = await tx.select().from(payments).where(and(eq(payments.billId, bill.id), eq(payments.status, "SUCCESS")));
-      const paidSum = existing.reduce((sum,p)=> sum + parseFloat(p.amount), 0);
-      const outstanding = billTotal - paidSum;
-      if (parseFloat(amountStr) > outstanding + 0.01) throw new Error("Amount exceeds outstanding");
+      const paidPaise = existing.reduce((sum,p)=> sum + amountToPaise(p.amount), 0);
+      const outstandingPaise = billPaise - paidPaise;
+      const amountPaise = amountToPaise(amountStr);
+      if (amountPaise > outstandingPaise) throw new Error("Amount exceeds outstanding");
 
       const gatewayRef = parsed.data.gatewayRef || `mock_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
       const exists = await tx.select().from(payments).where(eq(payments.gatewayRef, gatewayRef));

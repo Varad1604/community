@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
+import { amountToPaise } from "@/lib/payments/provider";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAuthAndSociety("bill:read");
@@ -24,10 +25,9 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       const [unit] = await tx.select().from(units).where(eq(units.id, bill.unitId));
       const pays = await tx.select().from(payments).where(and(eq(payments.billId, bill.id), eq(payments.societyId, societyId)));
       const outstanding = (()=> {
-        const total = parseFloat(bill.total);
-        const paid = pays.filter(p=>p.status==="SUCCESS").reduce((sum,p)=> sum + parseFloat(p.amount), 0);
-        const out = total - paid;
-        return Math.max(0, out).toFixed(2);
+        const totalPaise = amountToPaise(bill.total);
+        const paidPaise = pays.filter(p=>p.status==="SUCCESS").reduce((sum,p)=> sum + amountToPaise(p.amount), 0);
+        return (Math.max(0, totalPaise - paidPaise) / 100).toFixed(2);
       })();
       return { bill, unit, payments: pays, outstanding };
     });

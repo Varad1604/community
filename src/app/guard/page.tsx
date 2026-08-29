@@ -146,14 +146,14 @@ export default function GuardConsole() {
         </div>
 
         <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-7 h-10">
-            <TabsTrigger value="verify" className="text-xs">Verify</TabsTrigger>
-            <TabsTrigger value="expected" className="text-xs">Expected {expected.length>0 && <Badge className="ml-1 px-1">{expected.length}</Badge>}</TabsTrigger>
-            <TabsTrigger value="inside" className="text-xs">Inside {inside.length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{inside.length}</Badge>}</TabsTrigger>
-            <TabsTrigger value="deliveries" className="text-xs">Deliveries {deliveries.filter((d:any)=>d.status==="AT_GATE").length>0 && <Badge className="ml-1 px-1 bg-amber-600">{deliveries.filter((d:any)=>d.status==="AT_GATE").length}</Badge>}</TabsTrigger>
-            <TabsTrigger value="help" className="text-xs">Help {helpAttendance.filter((h:any)=>!h.attendance.checkOut).length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{helpAttendance.filter((h:any)=>!h.attendance.checkOut).length}</Badge>}</TabsTrigger>
-            <TabsTrigger value="vehicles" className="text-xs">Vehicles</TabsTrigger>
-            <TabsTrigger value="walkin" className="text-xs">Walk-in</TabsTrigger>
+          <TabsList className="flex w-full overflow-x-auto gap-1 h-10 p-1 justify-start">
+            <TabsTrigger value="verify" className="text-xs whitespace-nowrap shrink-0">Verify</TabsTrigger>
+            <TabsTrigger value="expected" className="text-xs whitespace-nowrap shrink-0">Expected {expected.length>0 && <Badge className="ml-1 px-1">{expected.length}</Badge>}</TabsTrigger>
+            <TabsTrigger value="inside" className="text-xs whitespace-nowrap shrink-0">Inside {inside.length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{inside.length}</Badge>}</TabsTrigger>
+            <TabsTrigger value="deliveries" className="text-xs whitespace-nowrap shrink-0">Deliveries {deliveries.filter((d:any)=>d.status==="AT_GATE").length>0 && <Badge className="ml-1 px-1 bg-amber-600">{deliveries.filter((d:any)=>d.status==="AT_GATE").length}</Badge>}</TabsTrigger>
+            <TabsTrigger value="help" className="text-xs whitespace-nowrap shrink-0">Help {helpAttendance.filter((h:any)=>!h.attendance.checkOut).length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{helpAttendance.filter((h:any)=>!h.attendance.checkOut).length}</Badge>}</TabsTrigger>
+            <TabsTrigger value="vehicles" className="text-xs whitespace-nowrap shrink-0">Vehicles</TabsTrigger>
+            <TabsTrigger value="walkin" className="text-xs whitespace-nowrap shrink-0">Walk-in</TabsTrigger>
           </TabsList>
 
           <TabsContent value="verify" className="space-y-4 mt-4">
