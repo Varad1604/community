@@ -27,6 +27,7 @@ export async function GET(req: Request) {
     const roles = await getUserRoles(sess.userId, societyId);
     const isStaff = roles.some((r: string) => ["SOCIETY_ADMIN","RWA_MEMBER","FACILITY_MANAGER","SUPER_ADMIN"].includes(r));
     const items = await withTenant(societyId, sess.userId, async (tx) => {
+      let where = eq(helpdeskTickets.societyId, societyId);
       if (!isStaff) {
         const members = await tx.select().from(unitMembers).where(and(eq(unitMembers.userId, sess.userId), eq(unitMembers.societyId, societyId)));
         const unitIds = members.map(m => m.unitId);
@@ -80,6 +81,7 @@ export async function POST(req: Request) {
         priority: parsed.data.priority || "MEDIUM",
         status: "OPEN",
       }).returning();
+      const staffRoles = await tx.select().from(units).where(eq(units.societyId, societyId)).limit(1);
       await tx.insert(notifications).values({
         societyId,
         userId: sess.userId,
