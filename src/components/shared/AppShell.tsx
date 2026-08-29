@@ -17,12 +17,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [roles, setRoles] = useState<string[]>([]);
   const [society, setSociety] = useState<any>(null);
   const [open, setOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const [hasEmergency, setHasEmergency] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me").then(r=>r.json()).then(d=>{
       if(d.user){ setUser(d.user); setRoles(d.roles?.map((r:any)=>r.role) || ["RESIDENT"]); }
     }).catch(()=>{});
     fetch("/api/societies").then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length) setSociety(d[0]); }).catch(()=>{});
+    const fetchUnread = () => fetch("/api/notifications").then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setUnread(d.filter((n:any)=>!n.readAt).length); }).catch(()=>{});
+    fetchUnread(); const id = setInterval(fetchUnread, 30000);
+    const fetchEmergency = () => fetch("/api/emergency").then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setHasEmergency(d.some((a:any)=>a.status==="OPEN")); }).catch(()=>{});
+    fetchEmergency(); const id2 = setInterval(fetchEmergency, 30000);
+    return () => { clearInterval(id); clearInterval(id2); };
   }, []);
 
   const navSections = getNavForRoles(roles.length? roles : ["RESIDENT"]);
@@ -78,7 +85,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {society && <Badge variant="outline" className="hidden md:inline-flex ml-2">{society.city}</Badge>}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" aria-label="Notifications"><Bell className="h-5 w-5" /><span className="sr-only">Notifications</span></Button>
+          <Link href="/notifications" aria-label={`Notifications ${unread ? `(${unread} unread)` : ""}`} className="relative inline-flex">
+            <Button variant="ghost" size="icon" aria-label="Notifications">
+              <Bell className="h-5 w-5" />
+              <span className="sr-only">Notifications</span>
+            </Button>
+            {unread > 0 && <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">{unread > 9 ? "9+" : unread}</span>}
+          </Link>
+          {hasEmergency && <Link href="/emergency" aria-label="Active emergency"><Badge variant="destructive" className="animate-pulse text-xs px-2">!</Badge></Link>}
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
