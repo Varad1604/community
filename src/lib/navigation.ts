@@ -49,12 +49,15 @@ export const adminNav: NavSection[] = [
   { title: "Manage", items: [
     { label: "Residents", href: "/admin/residents", icon: Users },
     { label: "Units", href: "/admin/units", icon: Building2 },
-    { label: "Parking", href: "/admin/parking", icon: Building2 },
     { label: "Gates", href: "/admin/gates", icon: Shield },
+    { label: "Parking", href: "/admin/parking", icon: Building2 },
     { label: "Amenities", href: "/admin/amenities", icon: Calendar },
   ]},
   { title: "Operations", items: [
     { label: "Visitors", href: "/admin/visitors", icon: Users },
+    { label: "Deliveries", href: "/admin/deliveries", icon: Truck },
+    { label: "Domestic Help", href: "/admin/help", icon: HeartHandshake },
+    { label: "Vehicles", href: "/admin/vehicles", icon: Building2 },
     { label: "Bookings", href: "/admin/bookings", icon: ClipboardList },
     { label: "Bills", href: "/admin/bills", icon: CreditCard },
     { label: "Payments", href: "/admin/payments", icon: Wallet },
@@ -67,8 +70,16 @@ export const adminNav: NavSection[] = [
     { label: "Emergency", href: "/admin/emergency", icon: Bell },
     { label: "Community", href: "/admin/community", icon: Bell },
     { label: "Notifications", href: "/notifications", icon: Bell },
-    { label: "Reports", href: "/admin/reports", icon: BarChart3 },
-    { label: "Audit Logs", href: "/admin/audit", icon: ScrollText },
+  ]},
+  { title: "Reports", items: [
+    { label: "Finance", href: "/admin/reports/finance", icon: Wallet },
+    { label: "Security", href: "/admin/reports/security", icon: Shield },
+    { label: "Amenities", href: "/admin/reports/amenities", icon: Calendar },
+    { label: "Community", href: "/admin/reports/community", icon: BarChart3 },
+    { label: "Reports Hub", href: "/admin/reports", icon: BarChart3 },
+  ]},
+  { title: "Audit", items: [
+    { label: "Audit Logs", href: "/admin/audit-logs", icon: ScrollText },
   ]},
 ];
 

@@ -45,6 +45,13 @@ const perms: Record<string, Role[]> = {
   "emergency:read": ["SUPER_ADMIN","SOCIETY_ADMIN","RWA_MEMBER","SECURITY_MANAGER","GUARD","RESIDENT","FAMILY_MEMBER"],
   "emergency:manage": ["SOCIETY_ADMIN","SECURITY_MANAGER","SUPER_ADMIN"],
   "notification:read": ["SUPER_ADMIN","SOCIETY_ADMIN","RWA_MEMBER","ACCOUNTANT","FACILITY_MANAGER","SECURITY_MANAGER","GUARD","RESIDENT","FAMILY_MEMBER","VENDOR","SERVICE_PROVIDER","DOMESTIC_HELP"],
+  "admin:overview": ["SUPER_ADMIN","SOCIETY_ADMIN","RWA_MEMBER","ACCOUNTANT","FACILITY_MANAGER","SECURITY_MANAGER"],
+  "resident:read": ["SUPER_ADMIN","SOCIETY_ADMIN","RWA_MEMBER","SECURITY_MANAGER"],
+  "resident:manage": ["SUPER_ADMIN","SOCIETY_ADMIN"],
+  "report:finance": ["SUPER_ADMIN","SOCIETY_ADMIN","ACCOUNTANT"],
+  "report:security": ["SUPER_ADMIN","SOCIETY_ADMIN","SECURITY_MANAGER"],
+  "report:amenity": ["SUPER_ADMIN","SOCIETY_ADMIN","FACILITY_MANAGER"],
+  "report:community": ["SUPER_ADMIN","SOCIETY_ADMIN","RWA_MEMBER"],
   "audit:read": ["SUPER_ADMIN","SOCIETY_ADMIN"],
 };
 export function can(roles: Role[], action: string) {
