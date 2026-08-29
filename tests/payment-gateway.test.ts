@@ -3,6 +3,7 @@ import { users, societies, userSocietyRoles, units, buildings, floors, unitMembe
 import { signJwt } from "../src/lib/auth/jwt";
 import { randomInt, createHmac } from "crypto";
 import { eq, and } from "drizzle-orm";
+import { amountToPaise } from "../src/lib/payments/provider";
 
 const BASE = "http://localhost:4000";
 async function fetchWithCookie(path: string, opts: any = {}, cookie?: string) {
@@ -222,10 +223,63 @@ async function run() {
   res = await fetchWithCookie(`/api/bills/${bill.id}`, { method: "PATCH", headers:{ "Content-Type":"application/json"}, body: JSON.stringify({ title:"Hacked" }) }, residentB.cookie);
   assert(res.status===403 || res.status===404, "34 RLS bill UPDATE cross-tenant blocked");
 
-  // 22 partial already tested
-  // 28 failed payment does not mark bill PAID already tested via invalid signature
+   // 22 partial already tested
+   // 28 failed payment does not mark bill PAID already tested via invalid signature
 
-  console.log(`\nPayment Gateway Results: ${pass} passed, ${fail} failed`);
-  process.exit(fail>0?1:0);
+   // === REGRESSION: exact paise arithmetic 0.01 / 0.10 / 1.99 / 4130.00 ===
+   assert(amountToPaise("0.01") === 1, "R1 0.01 => 1 paise");
+   assert(amountToPaise("0.10") === 10, "R2 0.10 => 10 paise");
+   assert(amountToPaise("1.99") === 199, "R3 1.99 => 199 paise");
+   assert(amountToPaise("4130.00") === 413000, "R4 4130.00 => 413000 paise");
+   let threw = false; try { amountToPaise("0.001"); } catch { threw = true; } assert(threw, "R5 0.001 rejected");
+   threw = false; try { amountToPaise("abc"); } catch { threw = true; } assert(threw, "R6 abc rejected");
+
+   const edgeBillRes = await fetchWithCookie("/api/bills", { method: "POST", body: JSON.stringify({ unitId: A.unit.id, title: "Edge 1.99", periodStart: "2026-06-01", periodEnd: "2026-06-30", dueDate: "2026-07-10", subtotal: "1.69", tax: "0.30", total: "1.99" }) }, adminA.cookie);
+   assert(edgeBillRes.status === 201, "R7 create 1.99 bill");
+   const edgeBill = await edgeBillRes.json();
+   const edgeOrderRes = await fetchWithCookie("/api/payments/create-order", { method: "POST", body: JSON.stringify({ billId: edgeBill.id }) }, residentA.cookie);
+   assert(edgeOrderRes.status === 201 || edgeOrderRes.status === 200, "R8 create order 1.99");
+   const edgeOrder = await edgeOrderRes.json();
+   assert(edgeOrder.amount === 199, "R9 order amount 199 paise for 1.99");
+   const edgePayId = `pay_edge_${Date.now()}`;
+   const edgeSig = mockSignature(edgeOrder.orderId, edgePayId);
+   res = await fetchWithCookie("/api/payments/verify", { method: "POST", body: JSON.stringify({ razorpay_order_id: edgeOrder.orderId, razorpay_payment_id: edgePayId, razorpay_signature: edgeSig, paymentId: edgeOrder.paymentId }) }, residentA.cookie);
+   assert(res.status === 200, "R10 verify 1.99 success");
+   let edgeBillRow = await db.select().from(bills).where(eq(bills.id, edgeBill.id)).then(r=>r[0]);
+   assert(edgeBillRow.status === "PAID", "R11 edge bill PAID after exact paise");
+
+   const tinyBillRes = await fetchWithCookie("/api/bills", { method: "POST", body: JSON.stringify({ unitId: A.unit.id, title: "Tiny 0.01", periodStart: "2026-07-01", periodEnd: "2026-07-31", dueDate: "2026-08-10", subtotal: "0.01", tax: "0.00", total: "0.01" }) }, adminA.cookie);
+   assert(tinyBillRes.status === 201, "R12 create 0.01 bill");
+   const tinyBill = await tinyBillRes.json();
+   const tinyOrderRes = await fetchWithCookie("/api/payments/create-order", { method: "POST", body: JSON.stringify({ billId: tinyBill.id }) }, residentA.cookie);
+   const tinyOrder = await tinyOrderRes.json();
+   assert(tinyOrder.amount === 1, "R13 order 1 paise for 0.01");
+   const tinyPayId = `pay_tiny_${Date.now()}`;
+   const tinySig = mockSignature(tinyOrder.orderId, tinyPayId);
+   res = await fetchWithCookie("/api/payments/verify", { method: "POST", body: JSON.stringify({ razorpay_order_id: tinyOrder.orderId, razorpay_payment_id: tinyPayId, razorpay_signature: tinySig, paymentId: tinyOrder.paymentId }) }, residentA.cookie);
+   assert(res.status === 200, "R14 tiny verify success");
+
+   const overBillRes = await fetchWithCookie("/api/bills", { method: "POST", body: JSON.stringify({ unitId: A.unit.id, title: "Overpay 0.10", periodStart: "2026-08-01", periodEnd: "2026-08-31", dueDate: "2026-09-10", subtotal: "0.10", tax: "0.00", total: "0.10" }) }, adminA.cookie);
+   assert(overBillRes.status === 201, "R15 create 0.10 bill");
+   const overBill = await overBillRes.json();
+   res = await fetchWithCookie("/api/payments/create-order", { method: "POST", body: JSON.stringify({ billId: overBill.id, amount: "0.11" }) }, residentA.cookie);
+   assert(res.status === 409, "R16 overpayment 0.11 > 0.10 rejected 409");
+   res = await fetchWithCookie("/api/payments/create-order", { method: "POST", body: JSON.stringify({ billId: overBill.id, amount: "0.10" }) }, residentA.cookie);
+   assert(res.status === 201 || res.status === 200, "R17 exact outstanding 0.10 allowed");
+   const overOrder = await res.json();
+   assert(overOrder.amount === 10, "R18 exact 0.10 => 10 paise");
+
+   const bigBillRes = await fetchWithCookie("/api/bills", { method: "POST", body: JSON.stringify({ unitId: A.unit.id, title: "Big 4130", periodStart: "2026-09-01", periodEnd: "2026-09-30", dueDate: "2026-10-10", subtotal: "3500.00", tax: "630.00", total: "4130.00" }) }, adminA.cookie);
+   assert(bigBillRes.status === 201, "R19 create 4130.00 bill");
+   const bigBill = await bigBillRes.json();
+   const bigOrderRes = await fetchWithCookie("/api/payments/create-order", { method: "POST", body: JSON.stringify({ billId: bigBill.id }) }, residentA.cookie);
+   const bigOrder = await bigOrderRes.json();
+   assert(bigOrder.amount === 413000, "R20 4130.00 => 413000 paise");
+   const outstandingRes = await fetchWithCookie(`/api/bills/${bigBill.id}`, {}, residentA.cookie);
+   const outstandingData = await outstandingRes.json();
+   assert(outstandingData.outstanding === "4130.00", "R21 outstanding 4130.00 exact");
+
+   console.log(`\nPayment Gateway Results: ${pass} passed, ${fail} failed`);
+   process.exit(fail>0?1:0);
 }
 run().catch(e=>{ console.error(e); process.exit(1); });
