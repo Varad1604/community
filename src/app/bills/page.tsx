@@ -9,10 +9,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, LoadingSkeleton } from "@/components/shared/EmptyState";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Wallet, Calendar, AlertTriangle } from "lucide-react";
+import { amountToPaise } from "@/lib/payments/provider";
 
 function formatINR(amount: string | number){
-  const n = typeof amount === "string" ? parseFloat(amount) : amount;
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
+  if (typeof amount === "string") {
+    try { const paise = amountToPaise(amount); return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(paise/100); } catch { const n = Number(amount); return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(isNaN(n)?0:n); }
+  }
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(amount);
 }
 
 type Bill = { id: string; title: string; periodStart: string; periodEnd: string; dueDate: string; total: string; status: string; unitId: string; createdAt: string };

@@ -12,7 +12,10 @@ import { toast } from "sonner";
 import { Wallet, Plus } from "lucide-react";
 import { amountToPaise } from "@/lib/payments/provider";
 
-function formatINR(s:string){ const n=parseFloat(s); return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(n); }
+function formatINR(s:string){
+  try { const paise = amountToPaise(s); return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(paise/100); }
+  catch { const n = Number(s); return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(isNaN(n)?0:n); }
+}
 function paiseToString(p:number){ return (p/100).toFixed(2); }
 
 export default function AdminBills(){
@@ -42,7 +45,7 @@ export default function AdminBills(){
     const paidBills = bills.filter(b=>b.status==="PAID").length;
     const overdue = bills.filter(b=> new Date(b.dueDate) < new Date(new Date().setHours(0,0,0,0)) && b.status!=="PAID").length;
     const outstandingPaise = bills.filter(b=> b.status!=="PAID").reduce((sum,b)=> sum + amountToPaise(b.total), 0) - payments.filter(p=>p.status==="SUCCESS").reduce((sum,p)=> sum + amountToPaise(p.amount), 0);
-    return { totalBilled: totalPaise/100, paidBills, overdue, outstanding: Math.max(0, outstandingPaise)/100 };
+    return { totalBilledPaise: totalPaise, paidBills, overdue, outstandingPaise: Math.max(0, outstandingPaise) };
   }, [bills, payments]);
 
   const filtered = bills.filter(b=>{
@@ -71,8 +74,8 @@ export default function AdminBills(){
         <PageHeader title="Billing — Admin" description="Create bills, inspect ledger, track outstanding • Society-scoped" />
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Billed</p><p className="text-lg font-semibold">{formatINR(kpis.totalBilled.toFixed(2))}</p><p className="text-xs text-muted-foreground">{bills.length} bills</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Outstanding</p><p className="text-lg font-semibold text-amber-700">{formatINR(kpis.outstanding.toFixed(2))}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Billed</p><p className="text-lg font-semibold">{formatINR(paiseToString(kpis.totalBilledPaise))}</p><p className="text-xs text-muted-foreground">{bills.length} bills</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Outstanding</p><p className="text-lg font-semibold text-amber-700">{formatINR(paiseToString(kpis.outstandingPaise))}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Paid Bills</p><p className="text-lg font-semibold text-emerald-600">{kpis.paidBills}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Overdue</p><p className={`text-lg font-semibold ${kpis.overdue ? "text-red-600" : ""}`}>{kpis.overdue}</p></CardContent></Card>
         </div>

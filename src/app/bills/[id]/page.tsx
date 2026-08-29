@@ -8,8 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Wallet, Calendar, Clock, CreditCard } from "lucide-react";
 import { toast } from "sonner";
+import { amountToPaise } from "@/lib/payments/provider";
 
-function formatINR(s: string){ const n=parseFloat(s); return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(n); }
+function formatINR(s: string){ try { const paise = amountToPaise(s); return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(paise/100); } catch { const n=Number(s); return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(isNaN(n)?0:n); } }
+function isPaidOutstanding(outstanding: string){ try { return amountToPaise(outstanding) <= 1; } catch { return false; } }
+function hasOutstanding(outstanding: string){ try { return amountToPaise(outstanding) > 0; } catch { return false; } }
 
 declare global { interface Window { Razorpay: any } }
 
@@ -47,7 +50,7 @@ export default function BillDetail(){
   async function handlePay(){
     if (!data) return;
     const outstanding = data.outstanding || data.bill.total;
-    if (parseFloat(outstanding) <= 0) return toast.error("Bill already paid");
+    if (!hasOutstanding(outstanding)) return toast.error("Bill already paid");
     setPaying(true);
     try {
       const orderRes = await fetch("/api/payments/create-order", {
@@ -110,7 +113,7 @@ export default function BillDetail(){
   const { bill, unit, payments, outstanding } = data;
   const isOverdue = new Date(bill.dueDate) < new Date(new Date().setHours(0,0,0,0)) && bill.status!=="PAID";
   const totalOutstanding = outstanding || bill.total;
-  const isPaid = bill.status==="PAID" || parseFloat(totalOutstanding) <= 0.01;
+  const isPaid = bill.status==="PAID" || isPaidOutstanding(totalOutstanding);
 
   return (
     <AppShell>
@@ -129,7 +132,7 @@ export default function BillDetail(){
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div><p className="text-xs text-muted-foreground">Total</p><p className="text-lg font-semibold">{formatINR(bill.total)}</p><p className="text-xs text-muted-foreground">Sub {formatINR(bill.subtotal)} + Tax {formatINR(bill.tax)}</p></div>
-              <div><p className="text-xs text-muted-foreground">Outstanding</p><p className={`text-lg font-semibold ${parseFloat(totalOutstanding) > 0 ? "text-amber-700" : "text-emerald-600"}`}>{formatINR(totalOutstanding)}</p><p className="text-xs text-muted-foreground">{isPaid ? "Paid in full" : isOverdue ? "Overdue" : "Due soon"}</p></div>
+              <div><p className="text-xs text-muted-foreground">Outstanding</p><p className={`text-lg font-semibold ${hasOutstanding(totalOutstanding) ? "text-amber-700" : "text-emerald-600"}`}>{formatINR(totalOutstanding)}</p><p className="text-xs text-muted-foreground">{isPaid ? "Paid in full" : isOverdue ? "Overdue" : "Due soon"}</p></div>
             </div>
             <div className="mt-4 flex gap-2">
               <Button className="flex-1" onClick={handlePay} disabled={isPaid || paying}>
