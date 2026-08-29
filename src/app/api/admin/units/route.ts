@@ -4,7 +4,7 @@ import { withTenant } from "@/lib/db/withTenant";
 import { units, buildings, floors, unitMembers, vehicles } from "@/lib/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
 export async function GET(req: Request) {
-  const auth = await requireAuthAndSociety("unit:read");
+  const auth = await requireAuthAndSociety("resident:read");
   if ("error" in auth) return auth.error;
   try {
     const { societyId, sess } = auth as any;
