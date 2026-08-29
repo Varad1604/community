@@ -6,7 +6,8 @@ import { z } from "zod";
 import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
 
-function isDecimal(s: string){ return /^\d+(\.\d{1,2})?$/.test(s) && parseFloat(s) >= 0; }
+import { amountToPaise } from "@/lib/payments/provider";
+function isDecimal(s: string){ try { const p = amountToPaise(s); return p >= 0; } catch { return false; } }
 
 export async function GET() {
   const auth = await requireAuthAndSociety("bill:read");
@@ -51,10 +52,12 @@ export async function POST(req: Request) {
     if (!parsed.success) return NextResponse.json({ error:"Invalid input", details: parsed.error.flatten() }, { status:400 });
     if (new Date(parsed.data.dueDate) <= new Date(parsed.data.periodEnd)) return NextResponse.json({ error:"dueDate must be after periodEnd" }, { status:400 });
     if (new Date(parsed.data.periodStart) > new Date(parsed.data.periodEnd)) return NextResponse.json({ error:"periodStart must be before periodEnd" }, { status:400 });
-    const totalNum = parseFloat(parsed.data.total);
-    const subNum = parseFloat(parsed.data.subtotal);
-    const taxNum = parseFloat(parsed.data.tax || "0");
-    if (Math.abs(totalNum - (subNum + taxNum)) > 0.01) return NextResponse.json({ error:"total must equal subtotal + tax" }, { status:400 });
+    try {
+      const totalPaise = amountToPaise(parsed.data.total);
+      const subPaise = amountToPaise(parsed.data.subtotal);
+      const taxPaise = amountToPaise(parsed.data.tax || "0.00");
+      if (totalPaise !== subPaise + taxPaise) return NextResponse.json({ error:"total must equal subtotal + tax" }, { status:400 });
+    } catch { return NextResponse.json({ error:"Invalid amount" }, { status:400 }); }
 
     const { societyId, sess } = auth as any;
     const item = await withTenant(societyId, sess.userId, async (tx)=>{
