@@ -3,6 +3,7 @@ import { vehicles, units, users } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
 import { eq, ilike, and } from "drizzle-orm";
 import { withTenant } from "@/lib/db/withTenant";
+import { maskPhone } from "@/lib/privacy";
 
 export async function GET(req: Request) {
   const auth = await requireAuthAndSociety("vehicle:entry");
@@ -18,7 +19,7 @@ export async function GET(req: Request) {
       const enriched = await Promise.all(vs.map(async v=>{
         const [unit] = await tx.select().from(units).where(eq(units.id, v.unitId));
         const [user] = await tx.select().from(users).where(eq(users.id, v.userId));
-        return { vehicle: v, unit, owner: user ? { id: user.id, fullName: user.fullName, phone: user.phone } : null };
+        return { vehicle: v, unit, owner: user ? { id: user.id, fullName: user.fullName, phone: maskPhone(user.phone) } : null };
       }));
       if (enriched.length===0) {
         const us = await tx.select().from(units).where(and(eq(units.societyId, societyId), ilike(units.number, `%${q}%`))).limit(5);

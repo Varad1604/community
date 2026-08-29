@@ -3,6 +3,7 @@ import { visitorEntries, visitors, units } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { withTenant } from "@/lib/db/withTenant";
+import { maskPhone } from "@/lib/privacy";
 
 export async function GET() {
   const auth = await requireAuthAndSociety("visitor:entry");
@@ -14,7 +15,8 @@ export async function GET() {
       const enriched = await Promise.all(entries.map(async e => {
         const [v] = await tx.select().from(visitors).where(eq(visitors.id, e.visitorId));
         const [u] = await tx.select().from(units).where(eq(units.id, e.unitId));
-        return { entry: e, visitor: v, unit: u };
+        const masked = v ? { ...v, phone: maskPhone(v.phone) } : v;
+        return { entry: e, visitor: masked, unit: u };
       }));
       return enriched;
     });

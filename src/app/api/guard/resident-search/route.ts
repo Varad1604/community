@@ -3,6 +3,7 @@ import { units, users, unitMembers } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
 import { eq, and, ilike, or, sql } from "drizzle-orm";
 import { withTenant } from "@/lib/db/withTenant";
+import { maskPhone } from "@/lib/privacy";
 
 export async function GET(req: Request) {
   const auth = await requireAuthAndSociety("visitor:entry");
@@ -22,7 +23,7 @@ export async function GET(req: Request) {
         const mems = await tx.select().from(unitMembers).where(eq(unitMembers.unitId, u.id));
         const residents = await Promise.all(mems.map(async m=>{
           const [user] = await tx.select().from(users).where(eq(users.id, m.userId));
-          return { ...m, user };
+          return { ...m, user: user ? { id: user.id, fullName: user.fullName, phone: maskPhone(user.phone) } : null };
         }));
         return { unit: u, residents };
       }));

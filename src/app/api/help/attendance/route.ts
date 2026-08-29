@@ -5,6 +5,7 @@ import { eq, and, desc, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
+import { maskPhone } from "@/lib/privacy";
 
 export async function GET() {
   const auth = await requireAuthAndSociety("help:read");
@@ -28,7 +29,8 @@ export async function GET() {
       const enriched = await Promise.all(atts.map(async a=>{
         const [h] = await tx.select().from(dailyHelp).where(eq(dailyHelp.id, a.helpId));
         const [u] = await tx.select().from(units).where(eq(units.id, a.unitId));
-        return { attendance: a, help: h, unit: u };
+        const maskedHelp = h ? { ...h, phone: isPrivileged ? maskPhone(h.phone) : h.phone } : h;
+        return { attendance: a, help: maskedHelp, unit: u };
       }));
       return enriched;
     });
