@@ -9,8 +9,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Wallet, Calendar, Clock, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { amountToPaise } from "@/lib/payments/provider";
-
-function formatINR(s: string){ try { const paise = amountToPaise(s); return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(paise/100); } catch { const n=Number(s); return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(isNaN(n)?0:n); } }
+import { formatINR } from "@/lib/format";
 function isPaidOutstanding(outstanding: string){ try { return amountToPaise(outstanding) <= 1; } catch { return false; } }
 function hasOutstanding(outstanding: string){ try { return amountToPaise(outstanding) > 0; } catch { return false; } }
 

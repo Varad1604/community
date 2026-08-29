@@ -38,6 +38,6 @@ export function ListCard({ href, title, subtitle, meta, status, categoryBadge, l
       </CardContent>
     </Card>
   );
-  if (href) return <Link href={href}>{content}</Link>;
+  if (href) return <Link href={href} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{content}</Link>;
   return content;
 }

@@ -46,7 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               const active = pathname===item.href;
               return (
                 <li key={item.href}>
-                  <Link href={item.href} onClick={onClick} className={`flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
+                  <Link href={item.href} onClick={onClick} aria-current={active ? "page" : undefined} className={`flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
                     <item.icon className="h-4 w-4 shrink-0" aria-hidden />
                     <span className="truncate">{item.label}</span>
                   </Link>
@@ -126,9 +126,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="grid grid-cols-5">
           {bottomNavItems.map(item=>{
             const active = pathname===item.href;
+            const isNotifications = item.href === "/notifications";
             return (
-              <Link key={item.href} href={item.href} className={`flex flex-col items-center gap-1 py-2 text-xs ${active ? "text-primary" : "text-muted-foreground"}`}>
-                <item.icon className={`h-5 w-5 ${active ? "text-primary" : ""}`} />
+              <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`relative flex flex-col items-center gap-1 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset ${active ? "text-primary" : "text-muted-foreground"}`}>
+                <span className="relative">
+                  <item.icon className={`h-5 w-5 ${active ? "text-primary" : ""}`} aria-hidden />
+                  {isNotifications && unread > 0 && <span className="absolute -top-1 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white leading-none">{unread > 9 ? "9+" : unread}</span>}
+                </span>
                 <span className="leading-none">{item.label}</span>
               </Link>
             );

@@ -6,7 +6,7 @@ import { StatCard } from "@/components/shared/StatCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Building2, Users, Shield, Truck, HeartHandshake, Car, Calendar, Wallet, Siren, Megaphone, BarChart3, Wrench, CreditCard } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-function paiseToINR(p: number) { return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(p / 100); }
+import { formatPaise } from "@/lib/format";
 export default function AdminOverview() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -29,9 +29,9 @@ export default function AdminOverview() {
           <StatCard label="Emergencies Open" value={data.emergenciesOpen} icon={<Siren className="h-4 w-4" />} />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card className="sm:col-span-2"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Billed</p><p className="text-lg font-semibold">{paiseToINR(f.totalBilledPaise)}</p><p className="text-xs text-muted-foreground">{f.billCount} bills • {f.overdueCount} not paid</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Collected</p><p className="text-lg font-semibold text-emerald-600">{paiseToINR(f.collectedPaise)}</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Outstanding</p><p className="text-lg font-semibold text-amber-600">{paiseToINR(f.outstandingPaise)}</p></CardContent></Card>
+          <Card className="sm:col-span-2"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Billed</p><p className="text-lg font-semibold">{formatPaise(f.totalBilledPaise)}</p><p className="text-xs text-muted-foreground">{f.billCount} bills • {f.overdueCount} not paid</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Collected</p><p className="text-lg font-semibold text-emerald-600">{formatPaise(f.collectedPaise)}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Outstanding</p><p className="text-lg font-semibold text-amber-600">{formatPaise(f.outstandingPaise)}</p></CardContent></Card>
         </div>
         <div className="grid grid-cols-3 gap-3">
           <Card><CardContent className="p-4 flex items-center gap-3"><Megaphone className="h-5 w-5" /><div><p className="text-sm font-semibold">{data.announcements}</p><p className="text-xs text-muted-foreground">Announcements</p></div></CardContent></Card>
