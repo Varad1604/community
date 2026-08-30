@@ -38,7 +38,7 @@ export default function AdminCommunityDashboard() {
           <StatCard label="Unread Notifications" value={loading?"—":stats.notifications} icon={<Bell className="h-5 w-5" />} />
           <StatCard label="Total Events" value={loading?"—":stats.events} icon={<Calendar className="h-5 w-5" />} />
         </div>
-        <Card><CardContent className="p-4 text-xs text-muted-foreground">Counts are live from database. No mock data. Refresh to update. Use Engage nav to manage Announcements, Polls, Events, Emergency.</CardContent></Card>
+        <Card><CardContent className="p-4 text-xs text-muted-foreground">Counts are live from database. Refresh to update. Use Engage nav to manage Announcements, Polls, Events, Emergency.</CardContent></Card>
       </div>
     </AppShell>
   );

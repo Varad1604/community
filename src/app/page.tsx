@@ -79,7 +79,7 @@ export default function Dashboard() {
         <PageHeader
           eyebrow={society?.code || "GAR001"}
           title={`Good morning, ${user?.fullName?.split(" ")[0] || "Resident"}`}
-          description={`${society?.name || "Green Acres Residency"} • ${society?.city || "Chennai"} • Pilot with ${units.length} flats across 3 towers`}
+          description={`${society?.name || "Green Acres Residency"} • ${society?.city || "Chennai"}`}
           action={<div className="flex gap-2"><Link href="/auth/sign-in"><Button variant="outline" size="sm">Switch account</Button></Link><Link href="/emergency" aria-label="View emergency alerts"><Button size="sm" className="bg-red-600 hover:bg-red-700" aria-label="Emergency alerts"><PhoneCall className="h-4 w-4 mr-2" aria-hidden />Emergency</Button></Link></div>}
         />
 
@@ -95,7 +95,7 @@ export default function Dashboard() {
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatCard label="Flats" value={units.length} sub="3 towers • 4 floors" icon={<Building2 className="h-4 w-4" />} />
+          <StatCard label="Flats" value={units.length} sub="Residential units" icon={<Building2 className="h-4 w-4" />} />
           <StatCard label="Upcoming visitors" value={invites.length} sub="PIN/QR pending" icon={<Users className="h-4 w-4" />} />
           <StatCard label="Bills due" value={pendingBills} sub={pendingBills? "Pay before due date" : "All clear"} icon={<Wallet className="h-4 w-4" />} />
           <StatCard label="Helpdesk open" value={openTickets} sub={openTickets? "Needs attention" : "No open tickets"} icon={<Wrench className="h-4 w-4" />} />

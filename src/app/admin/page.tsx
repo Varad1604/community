@@ -38,7 +38,7 @@ export default function AdminOverview() {
           <Card><CardContent className="p-4 flex items-center gap-3"><BarChart3 className="h-5 w-5" /><div><p className="text-sm font-semibold">{data.polls}</p><p className="text-xs text-muted-foreground">Polls</p></div></CardContent></Card>
           <Card><CardContent className="p-4 flex items-center gap-3"><Calendar className="h-5 w-5" /><div><p className="text-sm font-semibold">{data.events}</p><p className="text-xs text-muted-foreground">Events</p></div></CardContent></Card>
         </div>
-        <Card><CardContent className="p-3 text-xs text-muted-foreground">All metrics from live database with tenant isolation and paise-exact finance. No mock data.</CardContent></Card>
+        <Card><CardContent className="p-3 text-xs text-muted-foreground">All metrics from live database with tenant isolation and paise-exact finance.</CardContent></Card>
       </div>
     </AppShell>
   );

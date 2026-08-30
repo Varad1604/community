@@ -22,7 +22,7 @@ export default function SignInPage() {
       const res = await fetch("/api/auth/otp/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast.success(data.mockOtp ? `Mock OTP: ${data.mockOtp}` : "OTP sent");
+      toast.success("OTP sent");
       setStep("otp");
     } catch (e: any) { toast.error(e.message || "Failed to send OTP"); } finally { setLoading(false); }
   }
@@ -51,7 +51,7 @@ export default function SignInPage() {
           {step === "phone" ? (
             <>
               <Input placeholder="+91 99999 99999" value={phone} onChange={e => setPhone(e.target.value)} />
-              <p className="text-xs text-muted-foreground flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Mock OTP is 123456 (dev only)</p>
+              
               <Button onClick={requestOtp} disabled={loading} className="w-full">{loading ? "Sending..." : "Send OTP"}</Button>
             </>
           ) : (

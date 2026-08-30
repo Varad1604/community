@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Society OS — Gated Community Platform",
-  description: "Premium Indian residential community OS — Green Acres pilot. Visitors, bills, amenities, helpdesk.",
+  description: "Premium Indian residential community OS — Green Acres. Visitors, bills, amenities, helpdesk.",
 };
 
 export default function RootLayout({

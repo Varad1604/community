@@ -35,7 +35,7 @@ export default function HelpPage() {
         {inside.length>0 && (
           <Card className="border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20">
             <CardContent className="py-3 flex items-center justify-between">
-              <div className="flex items-center gap-2"><HeartHandshake className="h-5 w-5 text-emerald-700" /><div><p className="text-sm font-semibold">{inside.length} inside now</p><p className="text-xs text-muted-foreground">{inside.map((i:any)=>i.help?.name).join(", ")}</p></div></div>
+              <div className="flex items-center gap-2"><HeartHandshake className="h-5 w-5 text-emerald-700" /><div><p className="text-sm font-semibold">{inside.length} Currently inside</p><p className="text-xs text-muted-foreground">{inside.map((i:any)=>i.help?.name).join(", ")}</p></div></div>
               <Badge className="bg-emerald-600">INSIDE</Badge>
             </CardContent>
           </Card>
