@@ -107,7 +107,32 @@ async function run(){
   res = await fetchWithCookie("/api/units", {}, residentA.cookie);
   assert(res.status===401, "M: Logged-out cannot access units");
 
-  // N: Missing secret fails closed (simulate by checking prod guard) - check jwt throws if secret missing in prod
+// N: Stolen credential simulation — token copied BEFORE logout, used AFTER logout
+  // This proves that after logout, even a copied token cannot authenticate
+  // because the server-side session row is deleted during logout.
+  // Flow: create session → capture token → logout → use captured token → 401
+  const { sessions } = await import("../src/lib/db/schema");
+  const [stolenUser] = await db.insert(users).values({ phone: "90000stolen00", fullName: "Stolen Test", phoneVerified: true }).returning();
+  const socForStolen = await db.insert(societies).values({ name: "Soc-Stolen", code: "STOLEN", city: "Test" }).returning();
+  await db.insert(userSocietyRoles).values({ userId: stolenUser.id, societyId: socForStolen[0].id, role: "RESIDENT" as any });
+  const [stolenB] = await db.insert(buildings).values({ societyId: socForStolen[0].id, name: "B1", floorsCount: 1 }).returning();
+  const [stolenF] = await db.insert(floors).values({ societyId: socForStolen[0].id, buildingId: stolenB.id, number: 1 }).returning();
+  const [stolenU] = await db.insert(units).values({ societyId: socForStolen[0].id, buildingId: stolenB.id, floorId: stolenF.id, number: "SU-1" }).returning();
+  const stolenToken = await signJwt({ userId: stolenUser.id, phone: stolenUser.phone }, "24h");
+  await db.insert(sessions).values({ userId: stolenUser.id, token: stolenToken, expiresAt: new Date(Date.now()+86400000)});
+  const stolenCookie = `session=${stolenToken}; active_society=${socForStolen[0].id}`;
+
+  // Log out the stolen session (this deletes the row from sessions table)
+  await fetchWithCookie("/api/auth/logout", { method: "POST" }, stolenCookie);
+
+  // Now try to use the SAME stolen token — should fail because row was deleted
+  res = await fetchWithCookie("/api/auth/me", {}, stolenCookie);
+  assert(res.status===401, "N: Stolen credential after logout fails 401");
+
+  res = await fetchWithCookie("/api/units", {}, stolenCookie);
+  assert(res.status===401, "N: Stolen credential for units after logout fails 401");
+
+  // O: Missing secret fails closed (simulate by checking prod guard) - check jwt throws if secret missing in prod
   // We test that mock OTP not allowed in prod: env mock should fail if NODE_ENV production
   // Already covered in request handler.
 
