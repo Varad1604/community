@@ -51,15 +51,17 @@ export default function AdminParkingPage() {
                 <div key={s.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3">
                   <div className="flex-1">
                     <p className="text-sm font-medium">{s.number} • {s.type}</p>
-                    <p className="text-xs text-muted-foreground">Building {s.buildingId?.slice(0,8) || "—"} • {s.unitId ? `Assigned to ${s.unitId.slice(0,8)}` : "Unassigned"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {s.unitId ? `Assigned to Unit ${units.find((u: any) => u.id === s.unitId)?.number || s.unitId.slice(0, 8)}` : "Unassigned"}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={s.unitId ? "default" : "outline"}>{s.unitId ? "Assigned" : "Available"}</Badge>
-                    <Select onValueChange={v=> assign(s.id, v==="none" ? null : v)}>
-                      <SelectTrigger className="w-36 h-8"><span className="text-xs">Assign</span></SelectTrigger>
-                      <SelectContent>
+                    <Select onValueChange={v => assign(s.id, v === "none" ? null : v)}>
+                      <SelectTrigger className="w-40 h-8"><span className="text-xs">Assign Unit</span></SelectTrigger>
+                      <SelectContent className="max-h-60">
                         <SelectItem value="none">Unassign</SelectItem>
-                        {units.slice(0,10).map((u:any)=><SelectItem key={u.id} value={u.id}>{u.number}</SelectItem>)}
+                        {units.map((u: any) => <SelectItem key={u.id} value={u.id}>Unit {u.number}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>

@@ -38,8 +38,16 @@ export async function POST(req: Request) {
     if (invite.status === "CANCELLED") return NextResponse.json({ error: "This visitor invitation was cancelled", code: "CANCELLED", invite, visitor: maskedVisitor, unit }, { status: 409 });
     if (invite.status === "REJECTED") return NextResponse.json({ error: "This invitation was rejected", code: "REJECTED", invite, visitor: maskedVisitor, unit }, { status: 409 });
     if (invite.status === "EXPIRED" || new Date(invite.validTo) < now) return NextResponse.json({ error: "This visitor pass has expired", code: "EXPIRED", invite, visitor: maskedVisitor, unit }, { status: 409 });
-    if (isInside) return NextResponse.json({ error: "This visitor is already checked in", code: "ALREADY_INSIDE", invite, visitor: maskedVisitor, unit }, { status: 409 });
-    if (invite.status !== "PENDING" && invite.status !== "APPROVED") return NextResponse.json({ error: "Invitation not in valid state", code: "INVALID_STATUS", invite, visitor: maskedVisitor, unit }, { status: 409 });
+    if (invite.status === "PENDING") {
+      return NextResponse.json({
+        invite,
+        visitor: maskedVisitor,
+        unit,
+        status: "PENDING_APPROVAL",
+        message: "Pass is awaiting resident approval",
+      });
+    }
+    if (invite.status !== "APPROVED") return NextResponse.json({ error: "Invitation not in valid state", code: "INVALID_STATUS", invite, visitor: maskedVisitor, unit }, { status: 409 });
 
     await audit({ actorId: sess.userId, societyId, action: "guard:verify", entity: "visitor_invite", entityId: invite.id, newState: { code } });
 

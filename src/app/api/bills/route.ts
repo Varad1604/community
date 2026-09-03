@@ -39,6 +39,8 @@ export async function GET() {
   } catch { return NextResponse.json({ error:"Failed" }, { status:500 }); }
 }
 
+import { billItems } from "@/lib/db/schema";
+
 const createSchema = z.object({
   unitId: z.string().uuid(),
   title: z.string().min(1).max(100),
@@ -49,6 +51,11 @@ const createSchema = z.object({
   tax: z.string().refine(isDecimal, "Invalid tax").optional(),
   total: z.string().refine(isDecimal, "Invalid total"),
   status: z.enum(["DRAFT","ISSUED","OVERDUE","PAID","PARTIAL"]).optional(),
+  items: z.array(z.object({
+    label: z.string().min(1),
+    amount: z.string().refine(isDecimal, "Invalid item amount"),
+    hsn: z.string().optional(),
+  })).optional(),
 });
 
 export async function POST(req: Request) {
@@ -75,6 +82,18 @@ export async function POST(req: Request) {
         societyId, unitId: unit.id, title: parsed.data.title, periodStart: parsed.data.periodStart as any, periodEnd: parsed.data.periodEnd as any, dueDate: parsed.data.dueDate as any,
         subtotal: parsed.data.subtotal, tax: parsed.data.tax || "0", total: parsed.data.total, status: parsed.data.status || "ISSUED",
       }).returning();
+
+      if (parsed.data.items && parsed.data.items.length > 0) {
+        await tx.insert(billItems).values(
+          parsed.data.items.map((it) => ({
+            billId: created.id,
+            label: it.label,
+            amount: it.amount,
+            hsn: it.hsn || null,
+          }))
+        );
+      }
+
       const members = await tx.select().from(unitMembers).where(eq(unitMembers.unitId, unit.id));
       for (const m of members) {
         await tx.insert(notifications).values({

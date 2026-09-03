@@ -26,13 +26,25 @@ export async function GET() {
         const { inArray } = await import("drizzle-orm");
         atts = await tx.select().from(dailyHelpAttendance).where(and(eq(dailyHelpAttendance.societyId, societyId), inArray(dailyHelpAttendance.unitId, unitIds))).orderBy(desc(dailyHelpAttendance.createdAt)).limit(50);
       }
-      const enriched = await Promise.all(atts.map(async a=>{
-        const [h] = await tx.select().from(dailyHelp).where(eq(dailyHelp.id, a.helpId));
-        const [u] = await tx.select().from(units).where(eq(units.id, a.unitId));
-        const maskedHelp = h ? { ...h, phone: isPrivileged ? maskPhone(h.phone) : h.phone } : h;
-        return { attendance: a, help: maskedHelp, unit: u };
-      }));
-      return enriched;
+      if (atts.length === 0) return [];
+
+      const { inArray: ormInArray } = await import("drizzle-orm");
+      const helpIds = Array.from(new Set(atts.map((a) => a.helpId)));
+      const unitIds = Array.from(new Set(atts.map((a) => a.unitId)));
+
+      const [helpList, unitList] = await Promise.all([
+        tx.select().from(dailyHelp).where(ormInArray(dailyHelp.id, helpIds)),
+        tx.select().from(units).where(ormInArray(units.id, unitIds)),
+      ]);
+
+      const helpMap = new Map(helpList.map((h) => [h.id, h]));
+      const unitMap = new Map(unitList.map((u) => [u.id, u]));
+
+      return atts.map((a) => {
+        const h = helpMap.get(a.helpId);
+        const maskedHelp = h ? { ...h, phone: isPrivileged ? h.phone : maskPhone(h.phone) } : null;
+        return { attendance: a, help: maskedHelp, unit: unitMap.get(a.unitId) || null };
+      });
     });
     return NextResponse.json(items);
   } catch { return NextResponse.json({ error:"Failed" }, { status:500 }); }

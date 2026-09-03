@@ -32,7 +32,13 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   }
 }
 
-const patchSchema = z.object({ status: z.enum(["AT_GATE","DELIVERED","COLLECTED","RETURNED"]).optional(), collected: z.boolean().optional() });
+import { createHash } from "crypto";
+
+const patchSchema = z.object({
+  status: z.enum(["AT_GATE", "DELIVERED", "COLLECTED", "RETURNED"]).optional(),
+  collected: z.boolean().optional(),
+  otp: z.string().optional(),
+});
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAuthAndSociety("delivery:read");
@@ -41,21 +47,47 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { id } = await params;
     const body = await req.json();
     const parsed = patchSchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error:"Invalid input" }, { status:400 });
+    if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     const { societyId, sess } = auth as any;
 
-    const updated = await withTenant(societyId, sess.userId, async (tx)=>{
+    const updated = await withTenant(societyId, sess.userId, async (tx) => {
       const [del] = await tx.select().from(deliveries).where(and(eq(deliveries.id, id), eq(deliveries.societyId, societyId)));
       if (!del) throw new Error("Not found");
-      const roles = await import("@/lib/tenant").then(m=>m.getUserRoles(sess.userId, societyId));
-      const isGuard = roles.some((r:string)=>["GUARD","SECURITY_MANAGER","SOCIETY_ADMIN","SUPER_ADMIN"].includes(r));
-      const isResidentCollect = parsed.data.status==="COLLECTED" || parsed.data.collected===true;
+      const roles = await import("@/lib/tenant").then((m) => m.getUserRoles(sess.userId, societyId));
+      const isGuard = roles.some((r: string) => ["GUARD", "SECURITY_MANAGER", "SOCIETY_ADMIN", "SUPER_ADMIN"].includes(r));
+      const isResidentCollect = parsed.data.status === "COLLECTED" || parsed.data.collected === true;
 
       if (isResidentCollect) {
         const members = await tx.select().from(unitMembers).where(and(eq(unitMembers.userId, sess.userId), eq(unitMembers.unitId, del.unitId)));
-        const canCollect = members.length>0 || isGuard;
-        if (!canCollect) throw new Error("Forbidden");
-        const [upd] = await tx.update(deliveries).set({ status:"COLLECTED", collectedAt: new Date() }).where(and(eq(deliveries.id, id), eq(deliveries.societyId, societyId))).returning();
+        const isUnitResident = members.length > 0;
+
+        if (del.status === "AT_GATE" && !isGuard) {
+          throw new Error("Forbidden: Packages at the security gate must be physically collected via guard handover");
+        }
+
+        if (isGuard && !isUnitResident) {
+          // Guard marking collected on handover requires resident's OTP
+          if (del.otp) {
+            if (!parsed.data.otp) {
+              throw Object.assign(new Error("OTP required for package handover"), { code: "OTP_REQUIRED" });
+            }
+            const hashedInput = createHash("sha256").update(parsed.data.otp.trim()).digest("hex");
+            if (hashedInput !== del.otp) {
+              throw Object.assign(new Error("Invalid delivery OTP"), { code: "INVALID_OTP" });
+            }
+            if (del.otpExpiry && new Date() > new Date(del.otpExpiry)) {
+              throw Object.assign(new Error("Delivery OTP expired"), { code: "EXPIRED_OTP" });
+            }
+          }
+        } else if (!isUnitResident && !isGuard) {
+          throw new Error("Forbidden");
+        }
+
+        const [upd] = await tx
+          .update(deliveries)
+          .set({ status: "COLLECTED", collectedAt: new Date() })
+          .where(and(eq(deliveries.id, id), eq(deliveries.societyId, societyId)))
+          .returning();
         return upd;
       }
 

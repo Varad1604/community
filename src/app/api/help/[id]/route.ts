@@ -59,30 +59,73 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 }
 
-export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAuthAndSociety("help:manage");
   if ("error" in auth) return auth.error;
   try {
     const { id } = await params;
     const { societyId, sess } = auth as any;
-    const deleted = await withTenant(societyId, sess.userId, async (tx)=>{
+
+    let targetUnitId: string | null = null;
+    try {
+      const body = await req.json();
+      targetUnitId = body?.unitId || null;
+    } catch {}
+
+    const deleted = await withTenant(societyId, sess.userId, async (tx) => {
       const [help] = await tx.select().from(dailyHelp).where(and(eq(dailyHelp.id, id), eq(dailyHelp.societyId, societyId)));
       if (!help) throw new Error("Not found");
-      const links = await tx.select().from(dailyHelpLinks).where(and(eq(dailyHelpLinks.helpId, id), eq(dailyHelpLinks.societyId, societyId)));
+
       const members = await tx.select().from(unitMembers).where(and(eq(unitMembers.userId, sess.userId), eq(unitMembers.societyId, societyId)));
-      const unitIds = members.map(m=>m.unitId);
-      const isOwner = links.some(l=> unitIds.includes(l.unitId));
-      const roles = await import("@/lib/tenant").then(m=>m.getUserRoles(sess.userId, societyId));
-      const isPrivileged = roles.some((r:string)=>["SOCIETY_ADMIN","SUPER_ADMIN"].includes(r));
-      if (!isOwner && !isPrivileged) throw new Error("Forbidden");
-      await tx.delete(dailyHelpLinks).where(and(eq(dailyHelpLinks.helpId, id), eq(dailyHelpLinks.societyId, societyId)));
-      await tx.delete(dailyHelp).where(and(eq(dailyHelp.id, id), eq(dailyHelp.societyId, societyId)));
+      const userUnitIds = members.map((m) => m.unitId);
+
+      const roles = await import("@/lib/tenant").then((m) => m.getUserRoles(sess.userId, societyId));
+      const isPrivileged = roles.some((r: string) => ["SOCIETY_ADMIN", "SUPER_ADMIN"].includes(r));
+
+      // Determine which units to unlink
+      const unitsToUnlink = targetUnitId ? [targetUnitId] : (isPrivileged ? [] : userUnitIds);
+
+      if (!isPrivileged && unitsToUnlink.length === 0) {
+        throw new Error("Forbidden");
+      }
+
+      if (isPrivileged && (!targetUnitId || targetUnitId === "ALL")) {
+        // Admin deleting globally
+        await tx.delete(dailyHelpLinks).where(and(eq(dailyHelpLinks.helpId, id), eq(dailyHelpLinks.societyId, societyId)));
+        await tx.update(dailyHelp).set({ isActive: false }).where(and(eq(dailyHelp.id, id), eq(dailyHelp.societyId, societyId)));
+      } else {
+        // Unlink specific units
+        for (const uid of unitsToUnlink) {
+          await tx
+            .delete(dailyHelpLinks)
+            .where(
+              and(
+                eq(dailyHelpLinks.helpId, id),
+                eq(dailyHelpLinks.unitId, uid),
+                eq(dailyHelpLinks.societyId, societyId)
+              )
+            );
+        }
+
+        // Check if remaining links exist
+        const remaining = await tx
+          .select()
+          .from(dailyHelpLinks)
+          .where(and(eq(dailyHelpLinks.helpId, id), eq(dailyHelpLinks.societyId, societyId)));
+
+        if (remaining.length === 0) {
+          await tx.update(dailyHelp).set({ isActive: false }).where(and(eq(dailyHelp.id, id), eq(dailyHelp.societyId, societyId)));
+        }
+      }
+
       return help;
     });
-    await audit({ actorId: sess.userId, societyId, action:"delete", entity:"daily_help", entityId: id, prevState: deleted });
-    return NextResponse.json({ success:true });
-  } catch (e:any) {
-    if (e.message==="Forbidden") return NextResponse.json({ error:"Forbidden" }, { status:403 });
-    return NextResponse.json({ error: e.message || "Failed" }, { status:500 });
+
+    await audit({ actorId: sess.userId, societyId, action: "unlink", entity: "daily_help", entityId: id, prevState: deleted });
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    if (e.message === "Forbidden") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (e.message === "Not found") return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: e.message || "Failed" }, { status: 500 });
   }
 }

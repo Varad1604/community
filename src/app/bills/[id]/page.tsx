@@ -60,6 +60,33 @@ export default function BillDetail(){
       const orderData = await orderRes.json();
       if (!orderRes.ok) throw new Error(orderData.error || "Failed to create order");
 
+      if (orderData.keyId === "mock_key_id" || !window.Razorpay) {
+        // Mock gateway fallback: auto-simulate success in development
+        try {
+          await loadRazorpay();
+        } catch {}
+
+        if (!window.Razorpay) {
+          const fakePaymentId = `pay_mock_${Date.now()}`;
+          const verifyRes = await fetch("/api/payments/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              razorpay_order_id: orderData.orderId,
+              razorpay_payment_id: fakePaymentId,
+              razorpay_signature: "mock_signature",
+              paymentId: orderData.paymentId,
+            }),
+          });
+          const verifyData = await verifyRes.json();
+          if (!verifyRes.ok) throw new Error(verifyData.error || "Mock verification failed");
+          toast.success("Mock payment simulated & verified");
+          refresh();
+          setPaying(false);
+          return;
+        }
+      }
+
       await loadRazorpay();
 
       const options = {

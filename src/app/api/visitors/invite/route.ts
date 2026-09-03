@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { visitors, visitorInvites, units } from "@/lib/db/schema";
+import { visitors, visitorInvites, units, unitMembers } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { randomInt, randomUUID } from "crypto";
 import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
+import { getUserRoles } from "@/lib/tenant";
 
 const schema = z.object({
   name: z.string().min(1).max(100),
@@ -29,10 +30,16 @@ export async function POST(req: Request) {
     const result = await withTenant(societyId, sess.userId, async (tx) => {
       let unitId = parsed.data.unitId;
       if (!unitId) {
-        const [u] = await tx.select().from(units).where(eq(units.societyId, societyId)).limit(1);
-        if (!u) throw new Error("No unit found for society");
-        unitId = u.id;
+        const myUnits = await tx.select().from(unitMembers).where(and(eq(unitMembers.userId, sess.userId), eq(unitMembers.societyId, societyId)));
+        if (!myUnits.length) throw new Error("You are not registered in any unit in this society");
+        unitId = myUnits[0].unitId;
       } else {
+        const roles = await getUserRoles(sess.userId, societyId);
+        const isAdmin = roles.some((r: string) => ["SOCIETY_ADMIN", "SUPER_ADMIN"].includes(r));
+        if (!isAdmin) {
+          const [myUnit] = await tx.select().from(unitMembers).where(and(eq(unitMembers.userId, sess.userId), eq(unitMembers.unitId, unitId), eq(unitMembers.societyId, societyId)));
+          if (!myUnit) throw new Error("Forbidden: You are not a registered member of this unit");
+        }
         const [u] = await tx.select().from(units).where(and(eq(units.id, unitId), eq(units.societyId, societyId)));
         if (!u) throw new Error("Unit not in society");
       }
@@ -52,6 +59,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ visitor: result.visitor, invite: result.invite }, { status: 201 });
   } catch (e: any) {
+    if (e.message?.startsWith("Forbidden")) return NextResponse.json({ error: e.message }, { status: 403 });
+    if (e.message === "Unit not in society" || e.message?.includes("not found")) return NextResponse.json({ error: e.message }, { status: 404 });
+    if (e.message?.includes("Valid until")) return NextResponse.json({ error: e.message }, { status: 400 });
     return NextResponse.json({ error: e.message || "Failed" }, { status: 500 });
   }
 }

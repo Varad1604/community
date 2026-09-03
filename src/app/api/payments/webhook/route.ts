@@ -27,10 +27,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const event = payload.event || payload.entity;
-  const paymentEntity = payload.payload?.payment?.entity || payload.payment;
-  const orderId = payload.payload?.payment?.entity ? payload.payload.payment.entity.order_id || payload.payload.order?.entity?.id || payload.payload.payment.entity.id : payload.razorpay_order_id || payload.order_id;
-  // More robust extraction
+  const event = String(payload.event || payload.entity || "");
+
+  // Robust payload field extraction
   let razorpayOrderId: string | null = null;
   let razorpayPaymentId: string | null = null;
   let amount: number | null = null;
@@ -52,6 +51,28 @@ export async function POST(req: Request) {
 
   if (!razorpayOrderId) {
     return NextResponse.json({ error: "Missing order id" }, { status: 400 });
+  }
+
+  // Handle payment.failed event explicitly
+  if (event === "payment.failed") {
+    try {
+      const [payment] = await ownerDb.select().from(payments).where(eq(payments.gatewayRef, razorpayOrderId));
+      if (payment && payment.status === "PENDING") {
+        await ownerDb.update(payments).set({
+          status: "FAILED",
+          rawPayload: { ...(payment.rawPayload as any), webhookEvent: event, failureReason: payload.payload?.payment?.entity?.error_description || "Payment failed at gateway", webhookVerifiedAt: new Date().toISOString() },
+        }).where(eq(payments.id, payment.id));
+        await audit({ actorId: payment.payerId, societyId: payment.societyId, action: "payment:webhook_failed", entity: "payment", entityId: payment.id, newState: { gatewayRef: razorpayOrderId, status: "FAILED" } });
+      }
+      return NextResponse.json({ received: true, status: "FAILED" });
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message || "Failed to record payment failure" }, { status: 500 });
+    }
+  }
+
+  // Only allow payment.captured or order.paid to settle invoices
+  if (event !== "payment.captured" && event !== "order.paid") {
+    return NextResponse.json({ received: true, ignored: event });
   }
 
   try {

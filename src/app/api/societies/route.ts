@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { societies, userSocietyRoles } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { audit } from "@/lib/audit";
 
@@ -12,12 +12,10 @@ export async function GET() {
   try {
     const { sess } = auth as any;
     const memberships = await db.select().from(userSocietyRoles).where(eq(userSocietyRoles.userId, sess.userId));
-    const ids = memberships.map(m => m.societyId);
+    const ids = Array.from(new Set(memberships.map(m => m.societyId)));
     if (ids.length === 0) return NextResponse.json([]);
-    const items = await db.select().from(societies).where(eq(societies.id, ids[0]));
-    const all = await db.select().from(societies);
-    const filtered = all.filter(s => ids.includes(s.id));
-    return NextResponse.json(filtered);
+    const items = await db.select().from(societies).where(inArray(societies.id, ids));
+    return NextResponse.json(items);
   } catch { return NextResponse.json({ error: "Failed" }, { status: 500 }); }
 }
 

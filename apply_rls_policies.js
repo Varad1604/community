@@ -1,5 +1,9 @@
 const { Pool } = require('pg');
-const pool = new Pool({ connectionString: 'postgresql://neondb_owner:npg_efCoBn3kx5lc@ep-young-thunder-awwn4l4n.c-12.us-east-1.aws.neon.tech/neondb?sslmode=require' });
+if (!process.env.DATABASE_URL) {
+  console.error('DATABASE_URL environment variable is required');
+  process.exit(1);
+}
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 async function createPolicies() {
   // Define all policies per the migration file convention

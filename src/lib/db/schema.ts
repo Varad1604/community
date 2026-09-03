@@ -10,10 +10,10 @@ export const inviteStatusEnum = pgEnum("invite_status", ["PENDING","APPROVED","R
 export const entryStatusEnum = pgEnum("entry_status", ["INSIDE","EXITED","DENIED"]);
 export const deliveryStatusEnum = pgEnum("delivery_status", ["AT_GATE","DELIVERED","COLLECTED","RETURNED"]);
 export const helpCategoryEnum = pgEnum("help_category", ["MAID","COOK","DRIVER","NANNY","GARDENER","OTHER"]);
-export const billStatusEnum = pgEnum("bill_status", ["DRAFT","ISSUED","OVERDUE","PAID","PARTIAL"]);
+export const billStatusEnum = pgEnum("bill_status", ["DRAFT","ISSUED","OVERDUE","PAID","PARTIAL","CANCELLED"]);
 export const paymentStatusEnum = pgEnum("payment_status", ["PENDING","SUCCESS","FAILED","REFUNDED"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["UPI","CARD","NETBANKING","CASH","PHONEPE","RAZORPAY"]);
-export const ticketStatusEnum = pgEnum("ticket_status", ["OPEN","ASSIGNED","IN_PROGRESS","RESOLVED","CLOSED"]);
+export const ticketStatusEnum = pgEnum("ticket_status", ["OPEN","ASSIGNED","IN_PROGRESS","RESOLVED","CLOSED","CANCELLED"]);
 export const ticketPriorityEnum = pgEnum("ticket_priority", ["LOW","MEDIUM","HIGH","URGENT"]);
 export const amenityTypeEnum = pgEnum("amenity_type", ["POOL","GYM","CLUBHOUSE","PARK","HALL","SPORTS","OTHER"]);
 
@@ -173,6 +173,7 @@ export const visitorEntries = pgTable("visitor_entries", {
   index("entries_society_idx").on(t.societyId),
   index("entries_society_created_idx").on(t.societyId, t.createdAt),
   index("entries_unit_idx").on(t.societyId, t.unitId),
+  index("entries_inside_idx").on(t.societyId, t.checkOut, t.createdAt),
   uniqueIndex("entries_idempotency_unique").on(t.idempotencyKey),
 ]);
 
@@ -183,13 +184,33 @@ export const deliveries = pgTable("deliveries", {
   courierName: text("courier_name"),
   awb: varchar("awb", { length: 50 }),
   status: deliveryStatusEnum("status").default("AT_GATE").notNull(),
-  otp: varchar("otp", { length: 10 }),
+  otp: varchar("otp", { length: 64 }),
+  otpExpiry: timestamp("otp_expiry"),
   guardId: uuid("guard_id").references(() => users.id),
   collectedAt: timestamp("collected_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("deliveries_society_idx").on(t.societyId),
   index("deliveries_unit_idx").on(t.societyId, t.unitId),
+  index("deliveries_pending_idx").on(t.societyId, t.status, t.unitId),
+]);
+
+export const vehicleEntries = pgTable("vehicle_entries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  societyId: uuid("society_id").notNull().references(() => societies.id, { onDelete: "cascade" }),
+  vehicleId: uuid("vehicle_id").references(() => vehicles.id),
+  unitId: uuid("unit_id").references(() => units.id),
+  gateId: uuid("gate_id").references(() => gates.id),
+  guardId: uuid("guard_id").references(() => users.id),
+  numberPlate: varchar("number_plate", { length: 20 }).notNull(),
+  isVisitor: boolean("is_visitor").default(false).notNull(),
+  checkIn: timestamp("check_in").defaultNow().notNull(),
+  checkOut: timestamp("check_out"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("veh_entries_society_idx").on(t.societyId),
+  index("veh_entries_inside_idx").on(t.societyId, t.checkOut, t.createdAt),
 ]);
 
 export const dailyHelp = pgTable("daily_help", {
@@ -200,6 +221,7 @@ export const dailyHelp = pgTable("daily_help", {
   photoUrl: text("photo_url"),
   category: helpCategoryEnum("category").notNull(),
   policeVerified: boolean("police_verified").default(false).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [index("daily_help_society_idx").on(t.societyId)]);
 
@@ -219,7 +241,7 @@ export const dailyHelpLinks = pgTable("daily_help_links", {
 export const dailyHelpAttendance = pgTable("daily_help_attendance", {
   id: uuid("id").primaryKey().defaultRandom(),
   societyId: uuid("society_id").notNull().references(() => societies.id, { onDelete: "cascade" }),
-  helpId: uuid("help_id").notNull().references(() => dailyHelp.id),
+  helpId: uuid("help_id").notNull().references(() => dailyHelp.id, { onDelete: "cascade" }),
   unitId: uuid("unit_id").notNull().references(() => units.id),
   gateId: uuid("gate_id").references(() => gates.id),
   checkIn: timestamp("check_in").defaultNow().notNull(),
@@ -279,6 +301,16 @@ export const amenitySlots = pgTable("amenity_slots", {
   endTime: varchar("end_time", { length: 10 }).notNull(),
 }, (t) => [index("amenity_slots_society_idx").on(t.societyId)]);
 
+
+// Booking status enum for type safety across booking lifecycle
+export const bookingStatusEnum = pgEnum("booking_status", [
+  "PENDING_PAYMENT",  // Awaiting payment for paid amenities
+  "CONFIRMED",        // Active booking (free amenities or after payment)
+  "CANCELLED",        // Cancelled by user or admin
+  "COMPLETED",        // Slot time passed, booking fulfilled
+  "NO_SHOW",          // User didn't show up
+]);
+
 export const bookings = pgTable("bookings", {
   id: uuid("id").primaryKey().defaultRandom(),
   societyId: uuid("society_id").notNull().references(() => societies.id, { onDelete: "cascade" }),
@@ -287,13 +319,22 @@ export const bookings = pgTable("bookings", {
   userId: uuid("user_id").notNull().references(() => users.id),
   slotId: uuid("slot_id").references(() => amenitySlots.id),
   bookingDate: date("booking_date").notNull(),
+  // P0 FIX: Changed default from "CONFIRMED" to "PENDING_PAYMENT" for paid amenities.
+  // Actual initial value set at INSERT time based on amenity.fee > 0.
   status: varchar("status", { length: 20 }).default("CONFIRMED").notNull(),
   paymentId: uuid("payment_id"),
+  billId: uuid("bill_id").references(() => bills.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("bookings_society_idx").on(t.societyId),
-  uniqueIndex("bookings_slot_date_unique").on(t.amenityId, t.bookingDate, t.slotId),
+  // P0 FIX: Dropped bookings_slot_date_unique (forced capacity=1 for every amenity).
+  // Replaced with a plain index for capacity-COUNT queries and a per-user unique
+  // index that prevents one person from double-booking the same slot on the same date.
+  index("bookings_slot_date_idx").on(t.amenityId, t.bookingDate, t.slotId),
+  uniqueIndex("bookings_user_slot_date_unique").on(t.userId, t.amenityId, t.bookingDate, t.slotId),
 ]);
+
+
 
 export const bills = pgTable("bills", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -398,11 +439,15 @@ export const pollOptions = pgTable("poll_options", {
 
 export const pollVotes = pgTable("poll_votes", {
   id: uuid("id").primaryKey().defaultRandom(),
+  societyId: uuid("society_id").notNull().references(() => societies.id, { onDelete: "cascade" }),
   pollId: uuid("poll_id").notNull().references(() => polls.id, { onDelete: "cascade" }),
   optionId: uuid("option_id").notNull().references(() => pollOptions.id, { onDelete: "cascade" }),
   userId: uuid("user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (t) => [uniqueIndex("poll_votes_user_poll_unique").on(t.pollId, t.userId)]);
+}, (t) => [
+  index("poll_votes_society_idx").on(t.societyId),
+  uniqueIndex("poll_votes_user_poll_unique").on(t.pollId, t.userId),
+]);
 
 export const events = pgTable("events", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -437,11 +482,20 @@ export const emergencyAlerts = pgTable("emergency_alerts", {
   societyId: uuid("society_id").notNull().references(() => societies.id, { onDelete: "cascade" }),
   unitId: uuid("unit_id").references(() => units.id),
   raisedBy: uuid("raised_by").notNull().references(() => users.id),
-  type: varchar("type", { length: 20 }).notNull(),
+  type: varchar("type", { length: 20 }).notNull(),         // FIRE | MEDICAL | SECURITY | PANIC | OTHER
+  description: text("description"),                         // What the resident described
+  location: text("location"),                               // e.g. "Lobby, Tower B, Floor 3"
   status: varchar("status", { length: 20 }).default("OPEN").notNull(),
+  // OPEN → ACKNOWLEDGED → RESPONDED → RESOLVED | DISMISSED
   acknowledgedBy: uuid("acknowledged_by").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledged_at"),             // When guard acknowledged
+  respondedBy: uuid("responded_by").references(() => users.id), // Who physically responded
+  respondedAt: timestamp("responded_at"),                   // When physical response started
+  resolvedAt: timestamp("resolved_at"),                     // When incident closed
+  resolutionNotes: text("resolution_notes"),                // What actually happened
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [index("emergency_society_idx").on(t.societyId)]);
+
 
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").primaryKey().defaultRandom(),

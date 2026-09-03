@@ -7,6 +7,8 @@ import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
 import { amountToPaise } from "@/lib/payments/provider";
 
+import { billItems } from "@/lib/db/schema";
+
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAuthAndSociety("bill:read");
   if ("error" in auth) return auth.error;
@@ -24,12 +26,13 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       }
       const [unit] = await tx.select().from(units).where(eq(units.id, bill.unitId));
       const pays = await tx.select().from(payments).where(and(eq(payments.billId, bill.id), eq(payments.societyId, societyId)));
+      const items = await tx.select().from(billItems).where(eq(billItems.billId, id));
       const outstanding = (()=> {
         const totalPaise = amountToPaise(bill.total);
         const paidPaise = pays.filter(p=>p.status==="SUCCESS").reduce((sum,p)=> sum + amountToPaise(p.amount), 0);
         return (Math.max(0, totalPaise - paidPaise) / 100).toFixed(2);
       })();
-      return { bill, unit, payments: pays, outstanding };
+      return { bill, unit, payments: pays, items, outstanding };
     });
     if (!data) return NextResponse.json({ error:"Not found" }, { status:404 });
     return NextResponse.json(data);
@@ -66,10 +69,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       }
       if (Object.keys(allowed).length===0) throw new Error("No updates");
       const [upd] = await tx.update(bills).set(allowed).where(and(eq(bills.id, id), eq(bills.societyId, societyId))).returning();
-      return upd;
+      return { prev: bill, upd };
     });
-    await audit({ actorId: sess.userId, societyId, action:"update", entity:"bill", entityId: id, prevState: { status:"ISSUED" }, newState: updated });
-    return NextResponse.json(updated);
+    await audit({ actorId: sess.userId, societyId, action:"update", entity:"bill", entityId: id, prevState: updated.prev, newState: updated.upd });
+    return NextResponse.json(updated.upd);
   } catch (e:any) {
     if (e.message==="Not found") return NextResponse.json({ error:"Not found" }, { status:404 });
     if (e.message==="Forbidden") return NextResponse.json({ error:"Forbidden" }, { status:403 });

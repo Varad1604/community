@@ -33,6 +33,8 @@ const createSchema = z.object({
   awb: z.string().max(50).optional(),
 });
 
+import { randomInt, createHash } from "crypto";
+
 export async function POST(req: Request) {
   const auth = await requireAuthAndSociety("delivery:create");
   if ("error" in auth) return auth.error;
@@ -42,18 +44,34 @@ export async function POST(req: Request) {
     if (!parsed.success) return NextResponse.json({ error:"Invalid input" }, { status:400 });
     const { societyId, sess } = auth as any;
 
+    const rawOtp = String(randomInt(1000, 9999));
+    const hashedOtp = createHash("sha256").update(rawOtp).digest("hex");
+    const otpExpiry = new Date(Date.now() + 24 * 3600000); // 24 hours
+
     const item = await withTenant(societyId, sess.userId, async (tx)=>{
       const [unit] = await tx.select().from(units).where(and(eq(units.id, parsed.data.unitId), eq(units.societyId, societyId)));
       if (!unit) throw new Error("Unit not in society");
       const [created] = await tx.insert(deliveries).values({
-        societyId, unitId: unit.id, courierName: parsed.data.courierName, awb: parsed.data.awb || null, status: "AT_GATE", guardId: sess.userId,
+        societyId,
+        unitId: unit.id,
+        courierName: parsed.data.courierName,
+        awb: parsed.data.awb || null,
+        status: "AT_GATE",
+        guardId: sess.userId,
+        otp: hashedOtp,
+        otpExpiry,
       }).returning();
 
       const members = await tx.select().from(unitMembers).where(eq(unitMembers.unitId, unit.id));
       for (const m of members) {
         await tx.insert(notifications).values({
-          societyId, userId: m.userId, title: `Delivery at gate: ${parsed.data.courierName}`,
-          body: `For ${unit.number} • AWB ${parsed.data.awb || "—"} • Collect at gate`, channel: "IN_APP", relatedEntity: "delivery", relatedId: created.id,
+          societyId,
+          userId: m.userId,
+          title: `📦 Package at Gate: ${parsed.data.courierName}`,
+          body: `Package from ${parsed.data.courierName} has arrived. Share OTP ${rawOtp} with guard to collect.`,
+          channel: "IN_APP",
+          relatedEntity: "delivery",
+          relatedId: created.id,
         });
       }
       return created;

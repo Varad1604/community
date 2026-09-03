@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bookings, amenities, amenitySlots, units } from "@/lib/db/schema";
+import { bookings, amenities, amenitySlots, units, bills, payments } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
@@ -57,6 +57,33 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const isOwner = b.userId===sess.userId;
       if (!isOwner && !isPrivileged) throw new Error("Forbidden");
       if (parsed.data.status==="CANCELLED" && !isOwner && !isPrivileged) throw new Error("Forbidden");
+
+      // If cancelling: handle linked bill and potential refund
+      if (parsed.data.status === "CANCELLED" && b.billId) {
+        const [bill] = await tx.select().from(bills).where(and(eq(bills.id, b.billId), eq(bills.societyId, societyId)));
+        if (bill) {
+          if (bill.status !== "PAID") {
+            await tx.update(bills).set({ status: "CANCELLED" }).where(eq(bills.id, bill.id));
+          } else {
+            const [p] = await tx.select().from(payments).where(and(eq(payments.billId, bill.id), eq(payments.status, "SUCCESS")));
+            if (p) {
+              try {
+                const { getPaymentProvider, amountToPaise } = await import("@/lib/payments/provider");
+                await getPaymentProvider().refund({
+                  paymentId: p.gatewayRef || p.id,
+                  amountPaise: amountToPaise(p.amount),
+                  reason: "Booking cancelled",
+                });
+              } catch (err) {
+                console.warn("[BOOKING REFUND WARN]", err);
+              }
+              await tx.update(payments).set({ status: "REFUNDED" }).where(eq(payments.id, p.id));
+              await audit({ actorId: sess.userId, societyId, action: "payment:refund", entity: "payment", entityId: p.id, newState: { status: "REFUNDED", bookingId: id } });
+            }
+          }
+        }
+      }
+
       const [upd] = await tx.update(bookings).set({ status: parsed.data.status }).where(and(eq(bookings.id, id), eq(bookings.societyId, societyId))).returning();
       return upd;
     });
@@ -79,6 +106,12 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
     await withTenant(societyId, sess.userId, async (tx)=>{
       const [b] = await tx.select().from(bookings).where(and(eq(bookings.id, id), eq(bookings.societyId, societyId)));
       if (!b) throw new Error("Not found");
+      if (b.billId) {
+        const [bill] = await tx.select().from(bills).where(and(eq(bills.id, b.billId), eq(bills.societyId, societyId)));
+        if (bill && bill.status !== "PAID") {
+          await tx.update(bills).set({ status: "CANCELLED" }).where(eq(bills.id, bill.id));
+        }
+      }
       await tx.delete(bookings).where(and(eq(bookings.id, id), eq(bookings.societyId, societyId)));
     });
     await audit({ actorId: sess.userId, societyId, action:"delete", entity:"booking", entityId: id });

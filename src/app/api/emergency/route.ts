@@ -1,35 +1,105 @@
-import { NextResponse } from "next/server";
-import { emergencyAlerts, notifications, userSocietyRoles } from "@/lib/db/schema";
+import { NextResponse, after } from "next/server";
+import { emergencyAlerts, notifications, userSocietyRoles, unitMembers } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { z } from "zod";
 import { withTenant } from "@/lib/db/withTenant";
+import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+
 export async function GET() {
   const auth = await requireAuthAndSociety("emergency:read");
   if ("error" in auth) return auth.error;
   try {
     const { societyId, sess } = auth as any;
-    const items = await withTenant(societyId, sess.userId, async (tx) => tx.select().from(emergencyAlerts).where(eq(emergencyAlerts.societyId, societyId)).orderBy(desc(emergencyAlerts.createdAt)).limit(20));
+    const items = await withTenant(societyId, sess.userId, async (tx) =>
+      tx.select().from(emergencyAlerts)
+        .where(eq(emergencyAlerts.societyId, societyId))
+        .orderBy(desc(emergencyAlerts.createdAt))
+        .limit(50)
+    );
     return NextResponse.json(items);
   } catch { return NextResponse.json({ error: "Failed" }, { status: 500 }); }
 }
-const schema = z.object({ type: z.string().min(2).max(20), unitId: z.string().uuid().optional(), description: z.string().max(500).optional() });
+
+const schema = z.object({
+  type: z.enum(["FIRE", "MEDICAL", "SECURITY", "PANIC", "LIFT", "OTHER"]),
+  unitId: z.string().uuid().optional(),
+  description: z.string().max(500).optional(),
+  location: z.string().max(200).optional(),
+});
+
 export async function POST(req: Request) {
-  const auth = await requireAuthAndSociety("emergency:manage");
+  const auth = await requireAuthAndSociety("emergency:create");
   if ("error" in auth) return auth.error;
   try {
     const body = await req.json();
     const parsed = schema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 });
+    }
     const { societyId, sess } = auth as any;
-    const item = await withTenant(societyId, sess.userId, async (tx) => {
-      const [created] = await tx.insert(emergencyAlerts).values({ societyId, raisedBy: sess.userId, type: parsed.data.type, unitId: parsed.data.unitId || null, status: "OPEN" }).returning();
-      const members = await tx.select().from(userSocietyRoles).where(eq(userSocietyRoles.societyId, societyId));
-      for (const m of members) { await tx.insert(notifications).values({ societyId, userId: m.userId, title: `🚨 Emergency: ${parsed.data.type}`, body: parsed.data.description || `Alert raised • ${created.id.slice(0,8)}`, channel: "IN_APP", relatedEntity: "emergency", relatedId: created.id }); }
-      return created;
+
+    // Step 1: Create the alert and respond immediately — do NOT block on notification fan-out.
+    // The critical P0 fix: sequential O(N) inserts inside the transaction caused 504 timeouts
+    // on societies with 100+ members. Fan-out is now done asynchronously after response.
+    let unitId = parsed.data.unitId || null;
+    if (!unitId) {
+      const [myMem] = await db.select({ unitId: unitMembers.unitId })
+        .from(unitMembers)
+        .where(and(eq(unitMembers.userId, sess.userId), eq(unitMembers.societyId, societyId)));
+      if (myMem) unitId = myMem.unitId;
+    }
+
+    const [alert] = await db.insert(emergencyAlerts).values({
+      societyId,
+      raisedBy: sess.userId,
+      type: parsed.data.type,
+      description: parsed.data.description,
+      location: parsed.data.location,
+      unitId,
+      status: "OPEN",
+    }).returning();
+
+    await audit({
+      actorId: sess.userId,
+      societyId,
+      action: "create",
+      entity: "emergency_alert",
+      entityId: alert.id,
+      newState: alert,
     });
-    await audit({ actorId: sess.userId, societyId, action: "create", entity: "emergency_alert", entityId: item.id, newState: item });
-    return NextResponse.json(item, { status: 201 });
-  } catch (e: any) { return NextResponse.json({ error: e.message || "Failed" }, { status: 500 }); }
+
+    // Step 2: Fan-out notifications asynchronously via Next.js after()
+    after(async () => {
+      try {
+        const members = await db
+          .select({ userId: userSocietyRoles.userId })
+          .from(userSocietyRoles)
+          .where(eq(userSocietyRoles.societyId, societyId));
+
+        const CHUNK = 500;
+        const notifRows = members.map(m => ({
+          societyId,
+          userId: m.userId,
+          title: `🚨 Emergency Alert — ${parsed.data.type}`,
+          body: parsed.data.description || `Emergency alert raised. Guards have been notified.`,
+          channel: "IN_APP" as const,
+          relatedEntity: "emergency_alert",
+          relatedId: alert.id,
+        }));
+
+        for (let i = 0; i < notifRows.length; i += CHUNK) {
+          await db.insert(notifications).values(notifRows.slice(i, i + CHUNK));
+        }
+      } catch (e) {
+        console.error("[EMERGENCY FAN-OUT] Notification batch failed for alert", alert.id, e);
+      }
+    });
+
+    // Return the alert immediately — client does not wait for fan-out to complete
+    return NextResponse.json(alert, { status: 201 });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || "Failed" }, { status: 500 });
+  }
 }

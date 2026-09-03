@@ -5,13 +5,44 @@ import { eq, and, desc } from "drizzle-orm";
 import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
 import { getUserRoles } from "@/lib/tenant";
-const transitions: Record<string, string[]> = {
-  OPEN: ["ASSIGNED"],
-  ASSIGNED: ["IN_PROGRESS"],
-  IN_PROGRESS: ["RESOLVED"],
-  RESOLVED: ["CLOSED"],
-  CLOSED: [],
+const transitions: Record<string, Record<string, string[]>> = {
+  OPEN: {
+    RESIDENT: ["CANCELLED"],
+    FAMILY_MEMBER: ["CANCELLED"],
+    FACILITY_MANAGER: ["ASSIGNED", "IN_PROGRESS", "RESOLVED", "CANCELLED"],
+    SOCIETY_ADMIN: ["ASSIGNED", "IN_PROGRESS", "RESOLVED", "CLOSED", "CANCELLED"],
+    RWA_MEMBER: ["ASSIGNED", "IN_PROGRESS"],
+    SUPER_ADMIN: ["ASSIGNED", "IN_PROGRESS", "RESOLVED", "CLOSED", "CANCELLED"],
+  },
+  ASSIGNED: {
+    RESIDENT: ["CANCELLED"],
+    FAMILY_MEMBER: ["CANCELLED"],
+    FACILITY_MANAGER: ["IN_PROGRESS", "OPEN", "RESOLVED"],
+    SOCIETY_ADMIN: ["IN_PROGRESS", "OPEN", "RESOLVED", "CLOSED"],
+    SUPER_ADMIN: ["IN_PROGRESS", "OPEN", "RESOLVED", "CLOSED"],
+  },
+  IN_PROGRESS: {
+    FACILITY_MANAGER: ["RESOLVED", "OPEN"],
+    SOCIETY_ADMIN: ["RESOLVED", "CLOSED", "OPEN"],
+    SUPER_ADMIN: ["RESOLVED", "CLOSED", "OPEN"],
+  },
+  RESOLVED: {
+    RESIDENT: ["OPEN"],
+    FAMILY_MEMBER: ["OPEN"],
+    FACILITY_MANAGER: ["OPEN", "CLOSED"],
+    SOCIETY_ADMIN: ["OPEN", "CLOSED"],
+    SUPER_ADMIN: ["OPEN", "CLOSED"],
+  },
+  CLOSED: {
+    SOCIETY_ADMIN: ["OPEN"],
+    SUPER_ADMIN: ["OPEN"],
+  },
+  CANCELLED: {
+    SOCIETY_ADMIN: ["OPEN"],
+    SUPER_ADMIN: ["OPEN"],
+  },
 };
+
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAuthAndSociety("ticket:read");
   if ("error" in auth) return auth.error;
@@ -39,20 +70,43 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     return NextResponse.json({ error: "Failed" }, { status: 500 });
   }
 }
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAuthAndSociety("ticket:manage");
+  const auth = await requireAuthAndSociety("ticket:read");
   if ("error" in auth) return auth.error;
   try {
     const { id } = await params;
     const body = await req.json();
     const { status, assigneeId, priority, category } = body;
     const { societyId, sess } = auth as any;
+    const roles = await getUserRoles(sess.userId, societyId);
+
     const updated = await withTenant(societyId, sess.userId, async (tx) => {
       const [ticket] = await tx.select().from(helpdeskTickets).where(and(eq(helpdeskTickets.id, id), eq(helpdeskTickets.societyId, societyId)));
       if (!ticket) throw new Error("Not found");
+
+      const members = await tx.select().from(unitMembers).where(and(eq(unitMembers.userId, sess.userId), eq(unitMembers.societyId, societyId)));
+      const unitIds = members.map((m) => m.unitId);
+      const isOwner = ticket.raisedBy === sess.userId || unitIds.includes(ticket.unitId);
+
       const patch: any = {};
       if (status) {
-        if (!transitions[ticket.status]?.includes(status)) throw new Error(`Invalid transition ${ticket.status} -> ${status}`);
+        // Collect allowed target statuses for any of user's roles
+        const allowedTargets = new Set<string>();
+        for (const role of roles) {
+          const allowed = transitions[ticket.status]?.[role] || [];
+          for (const s of allowed) allowedTargets.add(s);
+        }
+
+        // If user is ticket owner and has resident-like permission
+        if (isOwner && !roles.some((r) => ["SOCIETY_ADMIN", "FACILITY_MANAGER", "SUPER_ADMIN"].includes(r))) {
+          const ownerAllowed = transitions[ticket.status]?.["RESIDENT"] || [];
+          for (const s of ownerAllowed) allowedTargets.add(s);
+        }
+
+        if (!allowedTargets.has(status)) {
+          throw new Error(`Cannot transition ticket from ${ticket.status} to ${status} with your role`);
+        }
         patch.status = status;
       }
       if (assigneeId !== undefined) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { helpdeskTickets, units, unitMembers, notifications } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, or, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
@@ -26,31 +26,36 @@ export async function GET(req: Request) {
     const assigneeId = url.searchParams.get("assigneeId");
     const roles = await getUserRoles(sess.userId, societyId);
     const isStaff = roles.some((r: string) => ["SOCIETY_ADMIN","RWA_MEMBER","FACILITY_MANAGER","SUPER_ADMIN"].includes(r));
+
+    const filterConditions: any[] = [];
+    if (status) filterConditions.push(eq(helpdeskTickets.status, status as any));
+    if (priority) filterConditions.push(eq(helpdeskTickets.priority, priority as any));
+    if (category) filterConditions.push(eq(helpdeskTickets.category, category));
+    if (unitId) filterConditions.push(eq(helpdeskTickets.unitId, unitId));
+    if (assigneeId) filterConditions.push(eq(helpdeskTickets.assigneeId, assigneeId));
+
     const items = await withTenant(societyId, sess.userId, async (tx) => {
-      let where = eq(helpdeskTickets.societyId, societyId);
       if (!isStaff) {
         const members = await tx.select().from(unitMembers).where(and(eq(unitMembers.userId, sess.userId), eq(unitMembers.societyId, societyId)));
         const unitIds = members.map(m => m.unitId);
-        if (unitIds.length === 0) {
-          const own = await tx.select().from(helpdeskTickets).where(and(eq(helpdeskTickets.societyId, societyId), eq(helpdeskTickets.raisedBy, sess.userId)));
-          return own;
-        }
-        const ownOrUnit = await tx.select().from(helpdeskTickets).where(and(eq(helpdeskTickets.societyId, societyId), sql`${helpdeskTickets.raisedBy} = ${sess.userId} OR ${helpdeskTickets.unitId} IN ${unitIds}` as any));
-        let filtered = ownOrUnit;
-        if (status) filtered = filtered.filter((t:any)=>t.status===status);
-        if (priority) filtered = filtered.filter((t:any)=>t.priority===priority);
-        if (category) filtered = filtered.filter((t:any)=>t.category===category);
-        if (unitId) filtered = filtered.filter((t:any)=>t.unitId===unitId);
-        if (assigneeId) filtered = filtered.filter((t:any)=>t.assigneeId===assigneeId);
-        return filtered.sort((a:any,b:any)=>new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime()).slice(0,50);
+        const scopeCondition = unitIds.length > 0
+          ? or(eq(helpdeskTickets.raisedBy, sess.userId), inArray(helpdeskTickets.unitId, unitIds))
+          : eq(helpdeskTickets.raisedBy, sess.userId);
+
+        return await tx
+          .select()
+          .from(helpdeskTickets)
+          .where(and(eq(helpdeskTickets.societyId, societyId), scopeCondition, ...filterConditions))
+          .orderBy(desc(helpdeskTickets.createdAt))
+          .limit(50);
       }
-      let rows = await tx.select().from(helpdeskTickets).where(eq(helpdeskTickets.societyId, societyId)).orderBy(desc(helpdeskTickets.createdAt)).limit(100);
-      if (status) rows = rows.filter((r:any)=>r.status===status);
-      if (priority) rows = rows.filter((r:any)=>r.priority===priority);
-      if (category) rows = rows.filter((r:any)=>r.category===category);
-      if (unitId) rows = rows.filter((r:any)=>r.unitId===unitId);
-      if (assigneeId) rows = rows.filter((r:any)=>r.assigneeId===assigneeId);
-      return rows.slice(0,50);
+
+      return await tx
+        .select()
+        .from(helpdeskTickets)
+        .where(and(eq(helpdeskTickets.societyId, societyId), ...filterConditions))
+        .orderBy(desc(helpdeskTickets.createdAt))
+        .limit(50);
     });
     return NextResponse.json(items);
   } catch { return NextResponse.json({ error: "Failed" }, { status: 500 }); }

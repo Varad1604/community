@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/shared/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,13 +9,15 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Shield, Clock, Building2, Users, LogIn, LogOut, Search, UserPlus, QrCode, Phone, MapPin, AlertTriangle, Package, HeartHandshake, Car } from "lucide-react";
+import { Shield, Clock, Building2, Users, LogIn, LogOut, Search, UserPlus, QrCode, Phone, MapPin, AlertTriangle, Package, HeartHandshake, Car, Wifi, WifiOff, RefreshCw } from "lucide-react";
+import { cacheApprovedInvites, findCachedInvite, queueOfflineEntry, getPendingOfflineEntries, markEntrySynced } from "@/lib/offline/db";
 
 export default function GuardConsole() {
   const [society, setSociety] = useState<any>(null);
   const [gates, setGates] = useState<any[]>([]);
   const [selectedGate, setSelectedGate] = useState<string>("");
   const [guard, setGuard] = useState<any>(null);
+  const [userRoles, setUserRoles] = useState<string[]>([]);
   const [time, setTime] = useState(new Date());
   const [code, setCode] = useState("");
   const [verifyResult, setVerifyResult] = useState<any>(null);
@@ -36,23 +38,190 @@ export default function GuardConsole() {
   const [helpSearchResults, setHelpSearchResults] = useState<any[]>([]);
   const [vehicleQuery, setVehicleQuery] = useState("");
   const [vehicleResults, setVehicleResults] = useState<any[]>([]);
+  const [vehiclesInside, setVehiclesInside] = useState<any[]>([]);
+  const [filterOverstayOnly, setFilterOverstayOnly] = useState(false);
   const [emergencies, setEmergencies] = useState<any[]>([]);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [pendingCount, setPendingCount] = useState(0);
+  const prevEmergencyCount = useRef<number>(0);
 
-  useEffect(()=>{
+  async function refreshPendingCount() {
+    const list = await getPendingOfflineEntries();
+    setPendingCount(list.length);
+  }
+
+  async function syncOfflineQueue() {
+    const list = await getPendingOfflineEntries();
+    if (list.length === 0) return;
+    toast.info(`Syncing ${list.length} offline operation(s)...`);
+    for (const item of list) {
+      try {
+        if (!item.actionType || item.actionType === "VISITOR_CHECKIN") {
+          const res = await fetch("/api/guard/check-in", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              inviteId: item.inviteId,
+              gateId: item.gateId,
+              idempotencyKey: item.idempotencyKey,
+              offlineTimestamp: item.timestamp,
+              isOffline: true,
+            }),
+          });
+          if (res.ok || res.status === 409) {
+            await markEntrySynced(item.idempotencyKey);
+          }
+        } else if (item.actionType === "VISITOR_CHECKOUT" && item.entryId) {
+          const res = await fetch("/api/guard/check-out", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ entryId: item.entryId }),
+          });
+          if (res.ok || res.status === 409) {
+            await markEntrySynced(item.idempotencyKey);
+          }
+        } else if (item.actionType === "DELIVERY_LOG") {
+          const res = await fetch("/api/deliveries", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(item.payload || {}),
+          });
+          if (res.ok || res.status === 409) {
+            await markEntrySynced(item.idempotencyKey);
+          }
+        } else if (item.actionType === "HELP_CHECKIN" || item.actionType === "HELP_CHECKOUT") {
+          const res = await fetch("/api/help/attendance", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(item.payload || {}),
+          });
+          if (res.ok || res.status === 409) {
+            await markEntrySynced(item.idempotencyKey);
+          }
+        }
+      } catch {}
+    }
+    await refreshPendingCount();
+    loadExpected();
+    loadInside();
+    loadDeliveries();
+    loadHelpAttendance();
+    toast.success("Offline queue sync complete");
+  }
+
+  useEffect(() => {
     const t = setInterval(()=>setTime(new Date()), 1000);
-    fetch("/api/auth/me").then(r=>r.json()).then(d=> setGuard(d.user)).catch(()=>{});
+    fetch("/api/auth/me").then(r=>r.json()).then(d=> {
+      setGuard(d.user);
+      if (Array.isArray(d.roles)) setUserRoles(d.roles.map((r: any) => r.role));
+    }).catch(()=>{});
     fetch("/api/societies").then(r=>r.json()).then(d=> setSociety(Array.isArray(d)? d[0]: null)).catch(()=>{});
     fetch("/api/gates").then(r=>r.json()).then(d=>{ if(Array.isArray(d)){ setGates(d); if(d[0]) setSelectedGate(d[0].id); }}).catch(()=>{});
-    fetch("/api/emergency").then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setEmergencies(d.filter((a:any)=>a.status==="OPEN")); }).catch(()=>{});
-    loadExpected(); loadInside(); loadDeliveries(); loadHelp(); loadHelpAttendance();
+    loadExpected(); loadInside(); loadDeliveries(); loadHelp(); loadHelpAttendance(); loadVehiclesInside();
+    refreshPendingCount();
+
     const saved = localStorage.getItem("guard_gate");
     if (saved) setSelectedGate(saved);
-    return ()=>clearInterval(t);
+
+    // P0 FIX: Web Audio API synthesized siren sound for physical security cabins.
+    const playEmergencySiren = () => {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.25);
+        osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.5);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.6);
+      } catch {}
+    };
+
+    // P0 FIX: Emergency polling — 5 second interval for life-safety responsiveness.
+    const fetchEmergencies = async () => {
+      try {
+        const res = await fetch("/api/emergency");
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const openAlerts = data.filter((a: any) => a.status === "OPEN");
+          setEmergencies(openAlerts);
+          if (openAlerts.length > 0) {
+            playEmergencySiren();
+          }
+          // Trigger browser notification + vibration when NEW emergencies appear
+          if (openAlerts.length > 0 && prevEmergencyCount.current === 0) {
+            if ("Notification" in window && Notification.permission === "granted") {
+              new Notification("🚨 EMERGENCY ALERT", {
+                body: `${openAlerts[0].type} — Acknowledge immediately`,
+                requireInteraction: true,
+              });
+            } else if ("Notification" in window && Notification.permission === "default") {
+              Notification.requestPermission();
+            }
+            if (navigator.vibrate) navigator.vibrate([500, 200, 500, 200, 500]);
+          }
+          prevEmergencyCount.current = openAlerts.length;
+        }
+      } catch {}
+    };
+    fetchEmergencies();
+    const emergencyInterval = setInterval(fetchEmergencies, 5000);
+    const onFocus = () => fetchEmergencies();
+    const onVisibility = () => { if (document.visibilityState === "visible") fetchEmergencies(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const handleOnline = () => { setIsOnline(true); toast.success("Online connection restored"); syncOfflineQueue(); };
+    const handleOffline = () => { setIsOnline(false); toast.warning("Connection lost. Operating in Offline Mode (24h Allowlist Active)"); };
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    if ("serviceWorker" in navigator && process.env.NODE_ENV !== "test") {
+      navigator.serviceWorker.register("/sw.js").catch(()=>{});
+    }
+
+    return () => {
+      clearInterval(t);
+      clearInterval(emergencyInterval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
   }, []);
 
   useEffect(()=>{ if(selectedGate) localStorage.setItem("guard_gate", selectedGate); }, [selectedGate]);
 
-  async function loadExpected(){ fetch("/api/guard/expected").then(r=>r.json()).then(d=> setExpected(Array.isArray(d)? d : [])).catch(()=>{}); }
+  async function loadExpected(){
+    try {
+      const res = await fetch("/api/guard/expected");
+      const d = await res.json();
+      if (Array.isArray(d)) {
+        setExpected(d);
+        // Pre-cache 24h expected visitors into IndexedDB for offline gate resilience
+        cacheApprovedInvites(d.map((item: any) => ({
+          id: item.invite.id,
+          code: item.invite.code,
+          qrToken: item.invite.qrToken,
+          visitorName: item.visitor?.name || "Guest",
+          visitorPhone: item.visitor?.phone,
+          unitNumber: item.unit?.number,
+          purpose: item.invite.purpose,
+          validFrom: item.invite.validFrom,
+          validTo: item.invite.validTo,
+          status: item.invite.status,
+          cachedAt: Date.now(),
+        })));
+      }
+    } catch {}
+  }
   async function loadInside(){ fetch("/api/guard/inside").then(r=>r.json()).then(d=> setInside(Array.isArray(d)? d : [])).catch(()=>{}); }
   async function loadDeliveries(){ fetch("/api/deliveries").then(r=>r.json()).then(d=> setDeliveries(Array.isArray(d)? d : [])).catch(()=>{}); }
   async function loadHelp(){ fetch("/api/help").then(r=>r.json()).then(d=> setHelpList(Array.isArray(d)? d : [])).catch(()=>{}); }
@@ -61,36 +230,178 @@ export default function GuardConsole() {
   async function verify(){
     if (!code.trim()) return toast.error("Enter pass code");
     setVerifyResult(null); setVerifyError(null);
-    const res = await fetch("/api/guard/verify", { method:"POST", headers:{ "Content-Type":"application/json"}, body: JSON.stringify({ code: code.trim() }) });
-    const data = await res.json();
-    if (!res.ok){ setVerifyError(data.error || "Not found"); toast.error(data.error || "Not found"); }
-    else { setVerifyResult(data); toast.success("Visitor verified"); }
+    const cleanCode = code.trim().toUpperCase();
+
+    if (!navigator.onLine) {
+      const cached = await findCachedInvite(cleanCode);
+      if (cached) {
+        setVerifyResult({
+          invite: { id: cached.id, code: cached.code, purpose: cached.purpose },
+          visitor: { name: cached.visitorName, phone: cached.visitorPhone },
+          unit: { number: cached.unitNumber || "N/A" },
+          isOffline: true,
+        });
+        toast.warning("Verified from 24h offline cache");
+        return;
+      } else {
+        setVerifyError("Pass not in offline cache (online connection required for un-cached passes)");
+        toast.error("Pass not in offline cache");
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch("/api/guard/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: cleanCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const cached = await findCachedInvite(cleanCode);
+        if (cached) {
+          setVerifyResult({
+            invite: { id: cached.id, code: cached.code, purpose: cached.purpose },
+            visitor: { name: cached.visitorName, phone: cached.visitorPhone },
+            unit: { number: cached.unitNumber || "N/A" },
+            isOffline: true,
+          });
+          toast.warning("Verified from 24h offline cache");
+          return;
+        }
+        setVerifyError(data.error || "Not found");
+        toast.error(data.error || "Not found");
+      } else {
+        setVerifyResult(data);
+        toast.success("Visitor verified");
+      }
+    } catch {
+      const cached = await findCachedInvite(cleanCode);
+      if (cached) {
+        setVerifyResult({
+          invite: { id: cached.id, code: cached.code, purpose: cached.purpose },
+          visitor: { name: cached.visitorName, phone: cached.visitorPhone },
+          unit: { number: cached.unitNumber || "N/A" },
+          isOffline: true,
+        });
+        toast.warning("Verified from 24h offline cache");
+      } else {
+        setVerifyError("Network unavailable and pass not in offline cache");
+        toast.error("Network unavailable");
+      }
+    }
   }
 
   async function checkIn(){
     if (!verifyResult?.invite) return;
-    const res = await fetch("/api/guard/check-in", { method:"POST", headers:{ "Content-Type":"application/json"}, body: JSON.stringify({ inviteId: verifyResult.invite.id, gateId: selectedGate || undefined }) });
-    const data = await res.json();
-    if (!res.ok){ toast.error(data.error || "Check-in failed"); } else { toast.success("Entry recorded"); setVerifyResult(null); setCode(""); loadExpected(); loadInside(); }
+
+    if (!navigator.onLine || verifyResult.isOffline) {
+      const idempotencyKey = crypto.randomUUID();
+      await queueOfflineEntry({
+        idempotencyKey,
+        code: verifyResult.invite.code,
+        inviteId: verifyResult.invite.id,
+        gateId: selectedGate || undefined,
+        entryType: "VISITOR",
+        timestamp: new Date().toISOString(),
+      });
+      toast.success("Entry saved to offline queue. Will sync automatically when online.");
+      setVerifyResult(null);
+      setCode("");
+      refreshPendingCount();
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/guard/check-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inviteId: verifyResult.invite.id, gateId: selectedGate || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Check-in failed");
+      } else {
+        toast.success("Entry recorded");
+        setVerifyResult(null);
+        setCode("");
+        loadExpected();
+        loadInside();
+      }
+    } catch {
+      const idempotencyKey = crypto.randomUUID();
+      await queueOfflineEntry({
+        idempotencyKey,
+        code: verifyResult.invite.code,
+        inviteId: verifyResult.invite.id,
+        gateId: selectedGate || undefined,
+        entryType: "VISITOR",
+        timestamp: new Date().toISOString(),
+      });
+      toast.success("Connection dropped. Entry saved to offline queue.");
+      setVerifyResult(null);
+      setCode("");
+      refreshPendingCount();
+    }
   }
 
-  async function checkOut(entryId: string){
-    const res = await fetch("/api/guard/check-out", { method:"POST", headers:{ "Content-Type":"application/json"}, body: JSON.stringify({ entryId }) });
-    if (!res.ok){ const d=await res.json(); toast.error(d.error||"Failed"); } else { toast.success("Checked out"); loadInside(); }
+  async function checkOut(entryId: string) {
+    if (!navigator.onLine) {
+      const idempotencyKey = crypto.randomUUID();
+      await queueOfflineEntry({
+        idempotencyKey,
+        entryId,
+        entryType: "VISITOR",
+        actionType: "VISITOR_CHECKOUT",
+        timestamp: new Date().toISOString(),
+      });
+      toast.info("Check-out saved to offline queue (will sync when online)");
+      setInside((prev) => prev.filter((item) => item.entry.id !== entryId));
+      refreshPendingCount();
+      return;
+    }
+    const res = await fetch("/api/guard/check-out", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entryId }),
+    });
+    if (!res.ok) {
+      const d = await res.json();
+      toast.error(d.error || "Failed");
+    } else {
+      toast.success("Checked out");
+      loadInside();
+    }
   }
 
-  async function searchResident(){
-    if (residentQuery.length<2) return;
+  async function searchResident() {
+    if (residentQuery.length < 2) return;
     const res = await fetch(`/api/guard/resident-search?q=${encodeURIComponent(residentQuery)}`);
     const d = await res.json();
-    setResidentResults(Array.isArray(d)? d : []);
+    setResidentResults(Array.isArray(d) ? d : []);
   }
 
-  async function doWalkIn(){
+  async function doWalkIn() {
     if (!walkin.visitorName || !walkin.phone || !walkin.unitId) return toast.error("Fill visitor, phone, unit");
-    const res = await fetch("/api/guard/walk-in", { method:"POST", headers:{ "Content-Type":"application/json"}, body: JSON.stringify({ visitorName: walkin.visitorName, phone: walkin.phone, purpose: walkin.purpose, unitId: walkin.unitId, gateId: selectedGate || undefined }) });
+    const res = await fetch("/api/guard/walk-in", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        visitorName: walkin.visitorName,
+        phone: walkin.phone,
+        purpose: walkin.purpose,
+        unitId: walkin.unitId,
+        gateId: selectedGate || undefined,
+      }),
+    });
     const d = await res.json();
-    if (!res.ok) toast.error(d.error||"Walk-in failed"); else { toast.success(`Walk-in: ${d.entry.id.slice(0,8)} checked in`); setWalkin({ visitorName:"", phone:"", purpose:"Guest", unitId:""}); loadInside(); }
+    if (!res.ok) {
+      toast.error(d.error || "Walk-in failed");
+    } else {
+      toast.success(`Walk-in requested: Pass ${d.invite.code} sent to resident for approval.`);
+      setWalkin({ visitorName: "", phone: "", purpose: "Guest", unitId: "" });
+      loadExpected();
+    }
   }
   async function searchDeliveryUnit(){
     if (deliveryQuery.length<2) return;
@@ -128,87 +439,283 @@ export default function GuardConsole() {
     if (!res.ok) toast.error(d.error||"Search failed");
   }
 
+  async function loadVehiclesInside() {
+    try {
+      const res = await fetch("/api/guard/vehicle-entry");
+      const d = await res.json();
+      if (Array.isArray(d)) setVehiclesInside(d);
+    } catch {}
+  }
+
+  async function vehicleCheckIn(numberPlate: string, unitId?: string, vehicleId?: string) {
+    try {
+      const res = await fetch("/api/guard/vehicle-entry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          numberPlate,
+          unitId: unitId || undefined,
+          vehicleId: vehicleId || undefined,
+          gateId: selectedGate || undefined,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        toast.error(d.error || "Vehicle check-in failed");
+      } else {
+        toast.success(`Vehicle ${numberPlate} admitted`);
+        loadVehiclesInside();
+      }
+    } catch {
+      toast.error("Failed to check in vehicle");
+    }
+  }
+
+  async function vehicleCheckOut(entryId: string) {
+    try {
+      const res = await fetch("/api/guard/vehicle-entry", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        toast.error(d.error || "Vehicle check-out failed");
+      } else {
+        toast.success("Vehicle checked out");
+        loadVehiclesInside();
+      }
+    } catch {
+      toast.error("Failed to check out vehicle");
+    }
+  }
+
   return (
     <AppShell>
-      <div className="max-w-6xl mx-auto space-y-4">
-        {emergencies.length>0 && (
-          <Card className="border-red-600 bg-red-50 dark:bg-red-950/20">
-            <CardContent className="p-3 flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
-              <p className="text-sm font-bold text-red-700">Active Emergency: {emergencies[0].type} • {new Date(emergencies[0].createdAt).toLocaleString()}</p>
-              <Badge variant="destructive" className="ml-auto">OPEN</Badge>
-            </CardContent>
-          </Card>
-        )}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b pb-3">
-          <div>
-            <h1 className="text-xl font-semibold flex items-center gap-2"><Shield className="h-5 w-5" />Gate Console</h1>
-            <p className="text-xs text-muted-foreground">{society?.name || "Green Acres"} • {gates.find(g=>g.id===selectedGate)?.name || "Select gate"} • {guard?.fullName || "Guard"}</p>
+      {emergencies.length > 0 && (
+        <div className="fixed top-0 inset-x-0 z-[100] bg-red-600 text-white px-4 py-3 flex items-center gap-3 shadow-2xl animate-pulse">
+          <AlertTriangle className="h-5 w-5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <span className="font-bold text-sm">
+              ACTIVE EMERGENCY — {emergencies.length} alert{emergencies.length > 1 ? "s" : ""} OPEN
+            </span>
+            <span className="ml-3 text-xs opacity-90">
+              {emergencies[0]?.type}{emergencies[0]?.location ? ` — ${emergencies[0].location}` : ""}
+            </span>
           </div>
+          <button
+            className="text-xs font-bold underline whitespace-nowrap bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg transition-colors"
+            onClick={() => setTab("verify")}
+          >
+            Acknowledge
+          </button>
+        </div>
+      )}
+      <div className={`max-w-6xl mx-auto space-y-4${emergencies.length > 0 ? " pt-14" : ""}`}>
+        {/* Cockpit Header */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-border/70 pb-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-semibold tracking-tight flex items-center gap-2 text-foreground">
+                <Shield className="h-5 w-5 text-primary" />
+                Gate Terminal
+              </h1>
+              {isOnline ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono tracking-wider font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40">
+                  <Wifi className="h-3 w-3" /> ONLINE • 24H ALLOWLIST ACTIVE
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono tracking-wider font-semibold border border-red-300 text-red-700 bg-red-50 dark:bg-red-950/40 animate-pulse">
+                  <WifiOff className="h-3 w-3" /> OFFLINE MODE (ALLOWLIST RUNNING)
+                </span>
+              )}
+              {pendingCount > 0 && (
+                <button
+                  onClick={syncOfflineQueue}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono tracking-wider font-semibold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer transition-colors"
+                >
+                  <RefreshCw className="h-3 w-3 animate-spin" /> {pendingCount} PENDING SYNC
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1 font-mono">
+              {society?.name || "Green Acres"} • {gates.find(g => g.id === selectedGate)?.name || "Main Gate"} • Security Officer: {guard?.fullName || "On Duty"}
+            </p>
+          </div>
+
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 text-sm"><Clock className="h-4 w-4" />{time.toLocaleTimeString()} • {time.toLocaleDateString()}</div>
+            <div className="flex items-center gap-1.5 text-xs font-mono text-muted-foreground bg-secondary/70 px-3 py-1.5 rounded-lg border border-border/60">
+              <Clock className="h-3.5 w-3.5 text-primary" />
+              <span>{time.toLocaleTimeString()}</span>
+              <span className="text-border/80">•</span>
+              <span>{time.toLocaleDateString()}</span>
+            </div>
             <Select value={selectedGate} onValueChange={setSelectedGate}>
-              <SelectTrigger className="w-40 h-8"><SelectValue placeholder="Select gate" /></SelectTrigger>
+              <SelectTrigger className="w-44 h-8 text-xs font-medium">
+                <SelectValue placeholder="Select gate" />
+              </SelectTrigger>
               <SelectContent>
-                {gates.map(g=> <SelectItem key={g.id} value={g.id}>{g.name} ({g.type})</SelectItem>)}
+                {gates.map(g => (
+                  <SelectItem key={g.id} value={g.id} className="text-xs font-mono">
+                    {g.name} ({g.type})
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
         </div>
 
+        {userRoles.length > 0 && !userRoles.some(r => ["GUARD", "SECURITY_MANAGER", "SUPER_ADMIN", "SOCIETY_ADMIN"].includes(r)) && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50/80 dark:bg-amber-950/40 p-3.5 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+              <span>
+                You are currently signed in as <strong>{guard?.fullName || "Resident"} ({userRoles.join(", ")})</strong>. Pass verification and check-ins require security guard credentials.
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs h-7 shrink-0 border-amber-400 bg-white dark:bg-amber-900 hover:bg-amber-100"
+              onClick={() => window.location.href = "/auth/sign-in"}
+            >
+              Switch to Guard (8888888888)
+            </Button>
+          </div>
+        )}
+
         <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="flex w-full overflow-x-auto gap-1 h-10 p-1 justify-start">
-            <TabsTrigger value="verify" className="text-xs whitespace-nowrap shrink-0">Verify</TabsTrigger>
-            <TabsTrigger value="expected" className="text-xs whitespace-nowrap shrink-0">Expected {expected.length>0 && <Badge className="ml-1 px-1">{expected.length}</Badge>}</TabsTrigger>
-            <TabsTrigger value="inside" className="text-xs whitespace-nowrap shrink-0">Inside {inside.length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{inside.length}</Badge>}</TabsTrigger>
-            <TabsTrigger value="deliveries" className="text-xs whitespace-nowrap shrink-0">Deliveries {deliveries.filter((d:any)=>d.status==="AT_GATE").length>0 && <Badge className="ml-1 px-1 bg-amber-600">{deliveries.filter((d:any)=>d.status==="AT_GATE").length}</Badge>}</TabsTrigger>
-            <TabsTrigger value="help" className="text-xs whitespace-nowrap shrink-0">Help {helpAttendance.filter((h:any)=>!h.attendance.checkOut).length>0 && <Badge className="ml-1 px-1 bg-emerald-600">{helpAttendance.filter((h:any)=>!h.attendance.checkOut).length}</Badge>}</TabsTrigger>
-            <TabsTrigger value="vehicles" className="text-xs whitespace-nowrap shrink-0">Vehicles</TabsTrigger>
-            <TabsTrigger value="walkin" className="text-xs whitespace-nowrap shrink-0">Walk-in</TabsTrigger>
+          <TabsList className="flex w-full overflow-x-auto gap-1 h-11 p-1 justify-start bg-secondary/60 rounded-xl border border-border/70">
+            <TabsTrigger value="verify" className="text-xs font-medium px-3.5 h-9 rounded-lg">
+              <QrCode className="h-3.5 w-3.5 mr-1.5" /> Verify Pass
+            </TabsTrigger>
+            <TabsTrigger value="expected" className="text-xs font-medium px-3.5 h-9 rounded-lg">
+              Expected {expected.length > 0 && <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-primary text-primary-foreground">{expected.length}</span>}
+            </TabsTrigger>
+            <TabsTrigger value="inside" className="text-xs font-medium px-3.5 h-9 rounded-lg">
+              Inside {inside.length > 0 && <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-emerald-600 text-white">{inside.length}</span>}
+            </TabsTrigger>
+            <TabsTrigger value="deliveries" className="text-xs font-medium px-3.5 h-9 rounded-lg">
+              Deliveries {deliveries.filter((d: any) => d.status === "AT_GATE").length > 0 && <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-600 text-white">{deliveries.filter((d: any) => d.status === "AT_GATE").length}</span>}
+            </TabsTrigger>
+            <TabsTrigger value="help" className="text-xs font-medium px-3.5 h-9 rounded-lg">
+              Domestic Staff
+            </TabsTrigger>
+            <TabsTrigger value="vehicles" className="text-xs font-medium px-3.5 h-9 rounded-lg">
+              Vehicles
+            </TabsTrigger>
+            <TabsTrigger value="walkin" className="text-xs font-medium px-3.5 h-9 rounded-lg">
+              Walk-in
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="verify" className="space-y-4 mt-4">
-            <Card className="border-2">
-              <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><QrCode className="h-5 w-5" />Verify Visitor — Pass / QR Code</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <Label htmlFor="guard-verify-code" className="sr-only">Visitor pass code</Label>
-                <p className="text-xs text-muted-foreground">Enter 6-digit pass code or scan QR token. Large input for speed.</p>
-                <div className="flex gap-2">
-                  <Input id="guard-verify-code" value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="e.g. A1B2C3" className="h-14 text-2xl font-mono tracking-widest text-center" autoFocus aria-label="Visitor pass code" />
-                  <Button onClick={verify} className="h-14 px-8 text-base font-semibold" aria-label="Verify visitor code">Verify</Button>
+          <TabsContent value="verify" className="space-y-4 mt-5">
+            <Card className="border border-border/80 bg-card shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
+              <CardHeader className="pb-3 border-b border-border/60">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
+                    <QrCode className="h-4 w-4 text-primary" />
+                    High-Speed Visitor Verification
+                  </CardTitle>
+                  <span className="text-[11px] text-muted-foreground font-mono">6-DIGIT CODE / QR TOKEN</span>
                 </div>
-                <p className="text-xs text-muted-foreground">QR uses same code. Camera scan not yet in this environment — enter code manually. Token verification is server-side.</p>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-5">
+                <Label htmlFor="guard-verify-code" className="sr-only">Visitor pass code</Label>
+                <div className="flex gap-2.5 max-w-xl mx-auto">
+                  <Input
+                    id="guard-verify-code"
+                    value={code}
+                    onChange={e => setCode(e.target.value.toUpperCase())}
+                    onKeyDown={e => { if (e.key === "Enter") verify(); }}
+                    placeholder="ENTER PASS CODE"
+                    className="h-16 text-2xl sm:text-3xl font-mono tracking-widest text-center font-bold border-2 focus-visible:ring-primary"
+                    autoFocus
+                    aria-label="Visitor pass code"
+                  />
+                  <Button
+                    onClick={verify}
+                    className="h-16 px-8 text-sm font-semibold tracking-wider uppercase font-mono"
+                    aria-label="Verify visitor code"
+                  >
+                    Verify Pass
+                  </Button>
+                </div>
+                <p className="text-center text-xs text-muted-foreground font-mono">
+                  Server-authoritative verification • Local 24h fallback cache automatically active during network loss
+                </p>
               </CardContent>
             </Card>
 
             {verifyError && (
-              <Card className="border-red-200 bg-red-50 dark:bg-red-950/20">
-                <CardContent className="py-4 flex gap-3">
-                  <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
-                  <div>
-                    <p className="text-sm font-semibold text-red-900 dark:text-red-100">{verifyError}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {verifyError.includes("expired") ? "Pass expired — ask resident to re-invite." : verifyError.includes("cancelled") ? "Invite cancelled — deny entry." : verifyError.includes("already") ? "Already inside — check Inside tab." : "Check code and try again."}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="rounded-xl border border-red-300 bg-red-50/90 dark:bg-red-950/30 p-4 flex gap-3 shadow-sm">
+                <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-red-950 dark:text-red-100">{verifyError}</p>
+                  <p className="text-xs text-red-800/80 dark:text-red-300/80 mt-1">
+                    {verifyError.includes("expired")
+                      ? "Pass expired — advise visitor to request a new invite from the host resident."
+                      : verifyError.includes("cancelled")
+                      ? "Invitation was cancelled by the host resident. Deny access."
+                      : verifyError.includes("already")
+                      ? "Visitor is already marked inside the society."
+                      : "Check the code carefully or search resident flat directly."}
+                  </p>
+                </div>
+              </div>
             )}
 
             {verifyResult && (
-              <Card className="border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20">
-                <CardContent className="pt-6">
-                  <p className="text-center text-sm font-bold tracking-widest uppercase text-emerald-700">Visitor Verified</p>
-                  <div className="text-center mt-2">
-                    <p className="text-xl font-semibold">{verifyResult.visitor.name}</p>
-                    <p className="text-sm text-muted-foreground flex items-center justify-center gap-1"><Phone className="h-3 w-3" />{verifyResult.visitor.phone}</p>
-                    <p className="text-sm mt-2">Visiting <span className="font-semibold">{verifyResult.unit?.number || verifyResult.invite.unitId.slice(0,8)}</span> • {verifyResult.invite.purpose}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Valid {new Date(verifyResult.invite.validFrom).toLocaleString()} → {new Date(verifyResult.invite.validTo).toLocaleString()}</p>
-                    <Badge className="mt-2 bg-emerald-600">READY</Badge>
+              <Card className="border-2 border-emerald-500/40 bg-card shadow-[0_4px_20px_rgba(16,185,129,0.08)]">
+                <CardContent className="pt-6 pb-6">
+                  <div className="flex items-center justify-between border-b border-border/60 pb-3 mb-4">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-mono font-bold tracking-wider uppercase text-emerald-600">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Credential Verified • Ready For Entry
+                    </span>
+                    <Badge variant="outline" className="font-mono text-xs border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40">
+                      PASS: {verifyResult.invite.code}
+                    </Badge>
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Visitor Name</p>
+                      <p className="text-xl font-bold tracking-tight text-foreground">{verifyResult.visitor.name}</p>
+                      <p className="text-xs text-muted-foreground font-mono flex items-center gap-1">
+                        <Phone className="h-3 w-3" /> {verifyResult.visitor.phone}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Destination Flat</p>
+                      <p className="text-xl font-bold tracking-tight text-foreground">
+                        Unit {verifyResult.unit?.number || verifyResult.invite.unitId.slice(0, 8)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Purpose: <span className="font-medium text-foreground">{verifyResult.invite.purpose}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-border/60 text-xs text-muted-foreground font-mono">
+                    Validity Window: {new Date(verifyResult.invite.validFrom).toLocaleDateString()} {new Date(verifyResult.invite.validFrom).toLocaleTimeString()} → {new Date(verifyResult.invite.validTo).toLocaleTimeString()}
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3 mt-6">
-                    <Button variant="outline" className="h-14 text-base" onClick={()=>setVerifyResult(null)}>Deny</Button>
-                    <Button className="h-14 text-base font-bold bg-emerald-600 hover:bg-emerald-700" onClick={checkIn}><LogIn className="mr-2 h-5 w-5" />Allow Entry</Button>
+                    <Button
+                      variant="outline"
+                      className="h-14 text-sm font-semibold border-border/80 hover:bg-secondary"
+                      onClick={() => setVerifyResult(null)}
+                    >
+                      Deny Entry
+                    </Button>
+                    <Button
+                      className="h-14 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                      onClick={checkIn}
+                    >
+                      <LogIn className="mr-2 h-5 w-5" /> Admit & Check In
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -239,23 +746,109 @@ export default function GuardConsole() {
           </TabsContent>
 
           <TabsContent value="inside" className="space-y-3 mt-4">
-            <div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Inside — Currently in society</h2><Badge variant="secondary">{inside.length} inside</Badge></div>
-            {inside.length===0 ? <Card><CardContent className="py-10 text-center"><Building2 className="h-8 w-8 mx-auto text-muted-foreground" /><p className="text-sm font-medium mt-2">No one inside</p></CardContent></Card> : (
-              <div className="space-y-3">
-                {inside.map((it:any)=>(
-                  <Card key={it.entry.id}>
-                    <CardContent className="p-4 flex items-center gap-4">
-                      <div className="h-10 w-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-medium">{it.visitor.name[0]}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{it.visitor.name} • {it.unit.number}</p>
-                        <p className="text-xs text-muted-foreground">In since {new Date(it.entry.checkIn).toLocaleTimeString()} • {Math.floor((Date.now() - new Date(it.entry.checkIn).getTime())/60000)} min</p>
-                      </div>
-                      <Button size="sm" variant="outline" className="h-10" onClick={()=>checkOut(it.entry.id)}><LogOut className="h-4 w-4 mr-1" />Check out</Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
+            {(() => {
+              const now = Date.now();
+              const isOverstay = (it: any) => it.invite?.validTo && new Date(it.invite.validTo).getTime() < now;
+              const overstayCount = inside.filter(isOverstay).length;
+              const displayed = filterOverstayOnly ? inside.filter(isOverstay) : inside;
+
+              return (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-semibold">Inside — Currently in Society</h2>
+                      <Badge variant="secondary">{inside.length} total</Badge>
+                      {overstayCount > 0 && (
+                        <Badge variant="destructive" className="animate-pulse flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" /> {overstayCount} Overstaying
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {overstayCount > 0 && (
+                        <Button
+                          size="sm"
+                          variant={filterOverstayOnly ? "destructive" : "outline"}
+                          className="text-xs h-8"
+                          onClick={() => setFilterOverstayOnly(!filterOverstayOnly)}
+                        >
+                          {filterOverstayOnly ? "Show All Inside" : `⚠️ Filter Overstaying (${overstayCount})`}
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" onClick={loadInside} className="h-8 text-xs">
+                        Refresh
+                      </Button>
+                    </div>
+                  </div>
+
+                  {displayed.length === 0 ? (
+                    <Card>
+                      <CardContent className="py-10 text-center">
+                        <Building2 className="h-8 w-8 mx-auto text-muted-foreground" />
+                        <p className="text-sm font-medium mt-2">
+                          {filterOverstayOnly ? "No overstaying visitors" : "No one inside"}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-3">
+                      {displayed.map((it: any) => {
+                        const overstayed = isOverstay(it);
+                        return (
+                          <Card
+                            key={it.entry.id}
+                            className={overstayed ? "border-2 border-red-500 bg-red-50/50 dark:bg-red-950/20" : ""}
+                          >
+                            <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`h-10 w-10 rounded-full flex items-center justify-center font-medium ${
+                                    overstayed ? "bg-red-100 text-red-700 font-bold" : "bg-emerald-100 text-emerald-700"
+                                  }`}
+                                >
+                                  {it.visitor.name[0]}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-semibold">{it.visitor.name}</p>
+                                    <Badge variant="outline" className="text-xs">
+                                      Unit {it.unit?.number || "—"}
+                                    </Badge>
+                                    {overstayed && (
+                                      <Badge variant="destructive" className="text-[10px]">
+                                        OVERSTAY
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    In since {new Date(it.entry.checkIn).toLocaleTimeString()} (
+                                    {Math.floor((now - new Date(it.entry.checkIn).getTime()) / 60000)} min)
+                                    {it.invite?.validTo && (
+                                      <span className={overstayed ? " text-red-600 font-semibold ml-1" : " ml-1"}>
+                                        • Pass valid till {new Date(it.invite.validTo).toLocaleTimeString()}
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant={overstayed ? "destructive" : "outline"}
+                                className="h-10 shrink-0"
+                                onClick={() => checkOut(it.entry.id)}
+                              >
+                                <LogOut className="h-4 w-4 mr-1" />
+                                Check out
+                              </Button>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </TabsContent>
 
           <TabsContent value="deliveries" className="space-y-4 mt-4">
@@ -355,31 +948,135 @@ export default function GuardConsole() {
 
           <TabsContent value="vehicles" className="space-y-4 mt-4">
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Car className="h-4 w-4" />Vehicle Verification</CardTitle></CardHeader>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Car className="h-4 w-4" />
+                  Vehicle Gate Entry & Verification
+                </CardTitle>
+              </CardHeader>
               <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">Search registration number or unit. Society-scoped, verified at gate.</p>
+                <p className="text-xs text-muted-foreground">Search number plate or flat to verify registered resident vehicles or admit visitor vehicles at the gate.</p>
                 <div className="flex gap-2">
                   <Label htmlFor="guard-vehicle-search" className="sr-only">Search vehicle</Label>
-                  <Input id="guard-vehicle-search" value={vehicleQuery} onChange={e=>setVehicleQuery(e.target.value.toUpperCase())} placeholder="KA01AB1234 or A-101" className="font-mono flex-1" aria-label="Search vehicle by number or unit" />
-                  <Button type="button" onClick={searchVehicle} aria-label="Verify vehicle"><Search className="h-4 w-4 mr-1" aria-hidden />Verify</Button>
+                  <Input
+                    id="guard-vehicle-search"
+                    value={vehicleQuery}
+                    onChange={e => setVehicleQuery(e.target.value.toUpperCase())}
+                    placeholder="KA01AB1234 or A-101"
+                    className="font-mono flex-1 uppercase"
+                    aria-label="Search vehicle by number or unit"
+                  />
+                  <Button type="button" onClick={searchVehicle} aria-label="Verify vehicle">
+                    <Search className="h-4 w-4 mr-1" aria-hidden />
+                    Verify / Search
+                  </Button>
                 </div>
-                {vehicleResults.length>0 && (
-                  <div className="space-y-2">
-                    {vehicleResults.map((r:any)=>(
-                      <Card key={r.vehicle.id} className="border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20">
-                        <CardContent className="p-3">
-                          <p className="text-sm font-mono font-bold">{r.vehicle.numberPlate} • {r.vehicle.type}</p>
-                          <p className="text-xs text-muted-foreground">Unit {r.unit?.number || r.vehicle.unitId.slice(0,8)} • Owner {r.owner?.fullName || r.vehicle.userId.slice(0,8)} {r.owner?.phone && `• ${r.owner.phone}`}</p>
-                          <p className="text-xs">Sticker {r.vehicle.stickerNo || "—"} • <Badge variant="secondary" className="ml-1">Authorized</Badge></p>
+
+                {vehicleResults.length > 0 && (
+                  <div className="space-y-2 pt-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Matching Registered Vehicles</p>
+                    {vehicleResults.map((r: any) => (
+                      <Card key={r.vehicle.id} className="border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20">
+                        <CardContent className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-base font-mono font-bold">{r.vehicle.numberPlate}</span>
+                              <Badge variant="secondary">{r.vehicle.type}</Badge>
+                              <Badge variant="outline" className="text-emerald-700 border-emerald-400">Authorized</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Unit {r.unit?.number || "—"} • Owner {r.owner?.fullName || "Resident"} {r.owner?.phone && `(${r.owner.phone})`}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+                            onClick={() => vehicleCheckIn(r.vehicle.numberPlate, r.unit?.id, r.vehicle.id)}
+                          >
+                            <LogIn className="h-4 w-4 mr-1" /> Admit Entry
+                          </Button>
                         </CardContent>
                       </Card>
                     ))}
                   </div>
                 )}
-                {vehicleQuery && vehicleResults.length===0 && <p className="text-sm text-muted-foreground text-center py-4">No vehicle found for "{vehicleQuery}"</p>}
-                <p className="text-xs text-muted-foreground">Vehicle entry/exit table not in schema — lookup only. Documented limitation: add vehicle_entries table for full gate logging.</p>
+
+                {vehicleQuery && vehicleResults.length === 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-3 text-xs flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-amber-900 dark:text-amber-300">Unregistered / Guest Vehicle: {vehicleQuery}</p>
+                      <p className="text-amber-700 dark:text-amber-400">Not currently registered to any resident profile.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-amber-400 shrink-0"
+                      onClick={() => vehicleCheckIn(vehicleQuery)}
+                    >
+                      <LogIn className="h-4 w-4 mr-1" /> Log Visitor Entry
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
+
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold">Vehicles Inside Society Now</h2>
+                <Badge variant="secondary">{vehiclesInside.length} logged</Badge>
+              </div>
+              <Button variant="ghost" size="sm" onClick={loadVehiclesInside} className="h-8 text-xs">
+                Refresh
+              </Button>
+            </div>
+
+            {vehiclesInside.length === 0 ? (
+              <Card>
+                <CardContent className="py-8 text-center">
+                  <Car className="h-8 w-8 mx-auto text-muted-foreground" />
+                  <p className="text-sm font-medium mt-2">No active vehicle entries logged</p>
+                  <p className="text-xs text-muted-foreground">Logged vehicle admissions will appear here with exit tracking.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {vehiclesInside.map((v: any) => (
+                  <Card key={v.entry.id} className="border">
+                    <CardContent className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-mono font-bold">{v.entry.numberPlate}</span>
+                          {v.entry.isVisitor ? (
+                            <Badge variant="outline" className="border-amber-400 text-amber-700 text-[10px]">
+                              VISITOR
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-[10px]">
+                              RESIDENT
+                            </Badge>
+                          )}
+                          {v.unit?.number && (
+                            <span className="text-xs text-muted-foreground">Unit {v.unit.number}</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Admitted at {new Date(v.entry.checkIn).toLocaleTimeString()} (
+                          {Math.floor((Date.now() - new Date(v.entry.checkIn).getTime()) / 60000)} min inside)
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-9 shrink-0"
+                        onClick={() => vehicleCheckOut(v.entry.id)}
+                      >
+                        <LogOut className="h-4 w-4 mr-1" /> Log Exit
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="walkin" className="space-y-4 mt-4">
@@ -413,8 +1110,8 @@ export default function GuardConsole() {
                     ))}
                   </div>
                 )}
-                <Button onClick={doWalkIn} className="w-full h-12 text-base"><LogIn className="mr-2 h-5 w-5" />Record Walk-in & Allow Entry</Button>
-                <p className="text-xs text-muted-foreground">Walk-in creates an APPROVED invite + entry immediately. Resident lookup is society-scoped. No approval workflow faked — guard records entry directly.</p>
+                <Button onClick={doWalkIn} className="w-full h-12 text-base"><LogIn className="mr-2 h-5 w-5" />Request Resident Approval for Walk-in</Button>
+                <p className="text-xs text-muted-foreground">Walk-in generates a pass and requests real-time resident approval via notification. Once approved by the resident, the pass appears in Expected Visitors for fast check-in.</p>
               </CardContent>
             </Card>
           </TabsContent>

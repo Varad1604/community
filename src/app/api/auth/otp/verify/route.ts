@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { otpCodes, users, sessions } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { signJwt } from "@/lib/auth/jwt";
 import { z } from "zod";
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     }
     const ok = await bcrypt.compare(code, otp.codeHash);
     if (!ok) {
-      await db.update(otpCodes).set({ attempts: otp.attempts + 1 }).where(eq(otpCodes.id, otp.id));
+      await db.update(otpCodes).set({ attempts: sql`attempts + 1` }).where(eq(otpCodes.id, otp.id));
       try { await db.insert((await import("@/lib/db/schema")).auditLogs).values({ action: "otp:verify_fail", entity: "otp", newState: { phone: clean.slice(-4).padStart(clean.length,"*"), attempts: otp.attempts+1 } }); } catch {}
       return NextResponse.json({ error: "Invalid OTP" }, { status: 400 });
     }

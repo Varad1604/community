@@ -7,7 +7,13 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { randomUUID } from "crypto";
 
-const schema = z.object({ inviteId: z.string().uuid(), gateId: z.string().uuid().optional(), idempotencyKey: z.string().optional() });
+const schema = z.object({
+  inviteId: z.string().uuid(),
+  gateId: z.string().uuid().optional(),
+  idempotencyKey: z.string().uuid().optional(),
+  offlineTimestamp: z.string().optional(),
+  isOffline: z.boolean().optional(),
+});
 
 export async function POST(req: Request) {
   const auth = await requireAuthAndSociety("visitor:entry");
@@ -30,7 +36,12 @@ export async function POST(req: Request) {
     const result = await withTenant(societyId, sess.userId, async (tx) => {
       const [invite] = await tx.select().from(visitorInvites).where(and(eq(visitorInvites.id, parsed.data.inviteId), eq(visitorInvites.societyId, societyId)));
       if (!invite) throw new Error("Invite not found");
-      if (invite.status === "CANCELLED" || invite.status === "REJECTED") throw new Error("Invite cancelled/rejected");
+      if (invite.status !== "APPROVED") {
+        if (invite.status === "PENDING") {
+          throw new Error("Cannot check in: Walk-in is awaiting resident approval");
+        }
+        throw new Error(`Cannot check in: Invite status is ${invite.status}`);
+      }
       if (new Date(invite.validTo) < new Date()) throw new Error("Invite expired");
       const existing = await tx.select().from(visitorEntries).where(eq(visitorEntries.inviteId, invite.id));
       if (existing.some(e => !e.checkOut)) throw new Error("Already checked in");
@@ -38,8 +49,19 @@ export async function POST(req: Request) {
       const idempotencyKey = parsed.data.idempotencyKey || randomUUID();
       const existingKey = await tx.select().from(visitorEntries).where(eq(visitorEntries.idempotencyKey, idempotencyKey));
       if (existingKey.length) return existingKey[0];
+
+      const checkInTime = parsed.data.offlineTimestamp ? new Date(parsed.data.offlineTimestamp) : new Date();
+
       const [entry] = await tx.insert(visitorEntries).values({
-        societyId, inviteId: invite.id, visitorId: invite.visitorId, unitId: invite.unitId, gateId: gateId || null, guardId: sess.userId, checkIn: new Date(), idempotencyKey,
+        societyId,
+        inviteId: invite.id,
+        visitorId: invite.visitorId,
+        unitId: invite.unitId,
+        gateId: gateId || null,
+        guardId: sess.userId,
+        checkIn: checkInTime,
+        idempotencyKey,
+        isOffline: parsed.data.isOffline ?? false,
       }).returning();
       return entry;
     });

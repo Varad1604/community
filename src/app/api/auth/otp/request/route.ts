@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { otpCodes } from "@/lib/db/schema";
-import { desc, gt, sql } from "drizzle-orm";
+import { desc, gt, and, eq, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { randomInt } from "crypto";
 import { getOtpProvider } from "@/lib/otp/provider";
@@ -15,12 +15,12 @@ export async function POST(req: Request) {
     const clean = phone.replace(/\s/g, "");
     const now = Date.now();
 
-    if (process.env.NODE_ENV === "production" && process.env.OTP_PROVIDER === "mock" && process.env.MOCK_OTP_ENABLED === "true") {
+    if (process.env.NODE_ENV === "production" && (process.env.OTP_PROVIDER === "mock" || process.env.MOCK_OTP_ENABLED === "true")) {
       return NextResponse.json({ error: "Mock OTP not allowed in production" }, { status: 500 });
     }
 
-    const recent = await db.select().from(otpCodes).where(gt(otpCodes.createdAt, new Date(now - 3600000))).then(rows => rows.filter(r => r.phone === clean));
-    const last = recent.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+    const recent = await db.select().from(otpCodes).where(and(eq(otpCodes.phone, clean), gt(otpCodes.createdAt, new Date(now - 3600000)))).orderBy(desc(otpCodes.createdAt));
+    const last = recent[0];
     if (last && now - last.createdAt.getTime() < 60000) {
       return NextResponse.json({ error: "Resend cooldown 60s" }, { status: 429 });
     }

@@ -80,9 +80,20 @@ export const adminNav: NavSection[] = [
   ]},
 ];
 
-export function getNavForRoles(roles: string[]) {
+export function getNavForRoles(roles: string[], activeMode?: "RESIDENT" | "GUARD" | "ADMIN" | null) {
+  if (activeMode === "GUARD") return guardNav;
+  if (activeMode === "ADMIN") return adminNav;
+  if (activeMode === "RESIDENT") return residentNav;
   if (roles.includes("GUARD") || roles.includes("SECURITY_MANAGER")) return guardNav;
-  if (roles.includes("SOCIETY_ADMIN") || roles.includes("RWA_MEMBER") || roles.includes("ACCOUNTANT") || roles.includes("FACILITY_MANAGER")) return adminNav;
+  if (
+    roles.includes("SUPER_ADMIN") ||
+    roles.includes("SOCIETY_ADMIN") ||
+    roles.includes("RWA_MEMBER") ||
+    roles.includes("ACCOUNTANT") ||
+    roles.includes("FACILITY_MANAGER")
+  ) {
+    return adminNav;
+  }
   return residentNav;
 }
 

@@ -21,7 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (!opt) throw new Error("Invalid option");
       const existing = await tx.select().from(pollVotes).where(and(eq(pollVotes.pollId, id), eq(pollVotes.userId, sess.userId)));
       if (existing.length > 0) throw new Error("Already voted");
-      const [vote] = await tx.insert(pollVotes).values({ pollId: id, optionId, userId: sess.userId }).returning();
+      const [vote] = await tx.insert(pollVotes).values({ societyId, pollId: id, optionId, userId: sess.userId }).returning();
       return vote;
     });
     await audit({ actorId: sess.userId, societyId, action: "vote", entity: "poll", entityId: id, newState: { optionId } });
