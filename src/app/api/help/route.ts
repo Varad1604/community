@@ -16,8 +16,10 @@ export async function GET() {
     const items = await withTenant(societyId, sess.userId, async (tx)=>{
       if (isPrivileged) {
         const helps = await tx.select().from(dailyHelp).where(eq(dailyHelp.societyId, societyId)).orderBy(desc(dailyHelp.createdAt)).limit(50);
-        const links = await tx.select().from(dailyHelpLinks).where(eq(dailyHelpLinks.societyId, societyId));
-        return helps.map(h=>({ help: h, links: links.filter(l=>l.helpId===h.id) }));
+        if (helps.length === 0) return [];
+        const helpIds = helps.map((h) => h.id);
+        const links = await tx.select().from(dailyHelpLinks).where(and(eq(dailyHelpLinks.societyId, societyId), inArray(dailyHelpLinks.helpId, helpIds)));
+        return helps.map((h) => ({ help: h, links: links.filter((l) => l.helpId === h.id) }));
       } else {
         const members = await tx.select().from(unitMembers).where(and(eq(unitMembers.userId, sess.userId), eq(unitMembers.societyId, societyId)));
         const unitIds = members.map(m=>m.unitId);

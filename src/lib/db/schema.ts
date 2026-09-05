@@ -1,7 +1,7 @@
 import {
   pgTable, uuid, text, timestamp, integer, boolean, jsonb, pgEnum, index, uniqueIndex, varchar, numeric, date
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 export const roleEnum = pgEnum("role", ["SUPER_ADMIN","SOCIETY_ADMIN","RWA_MEMBER","ACCOUNTANT","FACILITY_MANAGER","SECURITY_MANAGER","GUARD","RESIDENT","FAMILY_MEMBER","VENDOR","SERVICE_PROVIDER","DOMESTIC_HELP"]);
 export const unitTypeEnum = pgEnum("unit_type", ["FLAT","SHOP","VILLA","PLOT"]);
@@ -331,7 +331,7 @@ export const bookings = pgTable("bookings", {
   // Replaced with a plain index for capacity-COUNT queries and a per-user unique
   // index that prevents one person from double-booking the same slot on the same date.
   index("bookings_slot_date_idx").on(t.amenityId, t.bookingDate, t.slotId),
-  uniqueIndex("bookings_user_slot_date_unique").on(t.userId, t.amenityId, t.bookingDate, t.slotId),
+  uniqueIndex("bookings_user_slot_date_unique").on(t.userId, t.amenityId, t.bookingDate, t.slotId).where(sql`status != 'CANCELLED'`),
 ]);
 
 

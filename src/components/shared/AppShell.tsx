@@ -117,7 +117,58 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     location.href = "/auth/sign-in";
   }
 
-  const primaryRole = roles[0] || "RESIDENT";
+  // Flaw 1 Fix: Compute display role from activeMode, route context, or highest-privilege role
+  const ROLE_PRIORITY: string[] = [
+    "SUPER_ADMIN",
+    "SOCIETY_ADMIN",
+    "RWA_MEMBER",
+    "ACCOUNTANT",
+    "FACILITY_MANAGER",
+    "SECURITY_MANAGER",
+    "GUARD",
+    "RESIDENT",
+  ];
+
+  const ROLE_LABELS: Record<string, string> = {
+    SUPER_ADMIN: "SUPER ADMIN",
+    SOCIETY_ADMIN: "ESTATE ADMIN",
+    RWA_MEMBER: "RWA MEMBER",
+    ACCOUNTANT: "ACCOUNTANT",
+    FACILITY_MANAGER: "FACILITY MGR",
+    SECURITY_MANAGER: "SECURITY MGR",
+    GUARD: "GATE GUARD",
+    RESIDENT: "RESIDENT",
+  };
+
+  function resolveDisplayRole(): string {
+    // 1. If user explicitly selected a console mode, reflect that
+    if (activeMode === "ADMIN") {
+      const adminRoles = roles.filter(r => ["SUPER_ADMIN", "SOCIETY_ADMIN", "RWA_MEMBER", "ACCOUNTANT", "FACILITY_MANAGER"].includes(r));
+      if (adminRoles.length > 0) {
+        const best = ROLE_PRIORITY.find(r => adminRoles.includes(r));
+        return ROLE_LABELS[best || adminRoles[0]] || adminRoles[0].replace(/_/g, " ");
+      }
+      return "ADMIN";
+    }
+    if (activeMode === "GUARD") return "GATE GUARD";
+    if (activeMode === "RESIDENT") return "RESIDENT";
+
+    // 2. Infer from current route
+    if (pathname.startsWith("/admin")) {
+      const adminRoles = roles.filter(r => ["SUPER_ADMIN", "SOCIETY_ADMIN", "RWA_MEMBER", "ACCOUNTANT", "FACILITY_MANAGER"].includes(r));
+      if (adminRoles.length > 0) {
+        const best = ROLE_PRIORITY.find(r => adminRoles.includes(r));
+        return ROLE_LABELS[best || adminRoles[0]] || adminRoles[0].replace(/_/g, " ");
+      }
+    }
+    if (pathname.startsWith("/guard")) return "GATE GUARD";
+
+    // 3. Fallback: highest-privilege role
+    const bestRole = ROLE_PRIORITY.find(r => roles.includes(r)) || roles[0] || "RESIDENT";
+    return ROLE_LABELS[bestRole] || bestRole.replace(/_/g, " ");
+  }
+
+  const primaryRole = resolveDisplayRole();
 
   const Nav = ({ onClick }: { onClick?: () => void }) => (
     <nav className="space-y-6" aria-label="Primary">

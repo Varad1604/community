@@ -22,6 +22,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     const parsed = schema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 });
+    if (parsed.data.endsAt && new Date(parsed.data.endsAt) <= new Date(parsed.data.startsAt)) {
+      return NextResponse.json({ error: "endsAt must be after startsAt" }, { status: 400 });
+    }
     const { societyId, sess } = auth as any;
     const item = await withTenant(societyId, sess.userId, async (tx) => {
       const [created] = await tx.insert(events).values({ societyId, title: parsed.data.title, description: parsed.data.description || null, startsAt: new Date(parsed.data.startsAt) as any, endsAt: parsed.data.endsAt ? new Date(parsed.data.endsAt) as any : null, location: parsed.data.location || null, createdBy: sess.userId }).returning();

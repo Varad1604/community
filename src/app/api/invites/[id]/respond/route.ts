@@ -32,6 +32,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         .where(and(eq(visitorInvites.id, id), eq(visitorInvites.societyId, societyId)));
 
       if (!invite) throw new Error("Invite not found");
+      if (invite.status !== "PENDING") throw new Error("Invite is no longer pending");
+      if (new Date(invite.validTo) < new Date()) throw new Error("Invite has expired");
 
       // Verify resident belongs to the unit or is privileged admin
       const [member] = await tx
@@ -68,6 +70,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const [visitor] = await tx.select().from(visitors).where(eq(visitors.id, invite.visitorId));
       const [unit] = await tx.select().from(units).where(eq(units.id, invite.unitId));
 
+      if (invite.createdBy && invite.createdBy !== sess.userId) {
+        await tx.insert(notifications).values({
+          societyId,
+          userId: invite.createdBy,
+          title: `Walk-in ${newStatus === "APPROVED" ? "Approved" : "Denied"}: ${visitor?.name || "Visitor"}`,
+          body: `Resident responded to walk-in request for Unit ${unit?.number || ""}: ${newStatus}`,
+          channel: "IN_APP",
+          relatedEntity: "visitor_invite",
+          relatedId: invite.id,
+        });
+      }
+
       return { invite: updated, visitor, unit };
     });
 
@@ -84,6 +98,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   } catch (e: any) {
     if (e.message === "Forbidden") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     if (e.message === "Invite not found") return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (e.message?.includes("no longer pending") || e.message?.includes("expired")) {
+      return NextResponse.json({ error: e.message }, { status: 409 });
+    }
     return NextResponse.json({ error: e.message || "Failed" }, { status: 500 });
   }
 }

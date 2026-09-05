@@ -36,8 +36,13 @@ export default function AmenityDetail() {
       const res = await fetch("/api/bookings", { method:"POST", headers:{ "Content-Type":"application/json"}, body: JSON.stringify({ amenityId: params.id, slotId: selectedSlot, bookingDate, unitId: selectedUnit || undefined }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Failed");
-      toast.success("Booking confirmed");
-      router.push(`/bookings/${d.id}`);
+      if (d.requiresPayment) {
+        toast.success("Slot reserved! Please complete payment to confirm.");
+      } else {
+        toast.success("Booking confirmed!");
+      }
+      const bookingId = d.booking?.id || d.id;
+      router.push(`/bookings/${bookingId}`);
     } catch (e:any){ toast.error(e.message || "Slot no longer available"); }
     finally { setBooking(false); }
   }

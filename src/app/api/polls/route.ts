@@ -42,8 +42,23 @@ export async function POST(req: Request) {
     const result = await withTenant(societyId, sess.userId, async (tx) => {
       const [poll] = await tx.insert(polls).values({ societyId, question: parsed.data.question, createdBy: sess.userId, endsAt: parsed.data.endsAt ? new Date(parsed.data.endsAt) as any : null, isAnonymous: parsed.data.isAnonymous || false }).returning();
       const opts = await Promise.all(parsed.data.options.map((label) => tx.insert(pollOptions).values({ pollId: poll.id, label }).returning().then((r) => r[0])));
-      const members = await tx.select().from(userSocietyRoles).where(eq(userSocietyRoles.societyId, societyId));
-      for (const m of members) { await tx.insert(notifications).values({ societyId, userId: m.userId, title: `New poll: ${parsed.data.question.slice(0,60)}`, body: `Vote now • ${parsed.data.options.length} options`, channel: "IN_APP", relatedEntity: "poll", relatedId: poll.id }); }
+      const members = await tx.select({ userId: userSocietyRoles.userId }).from(userSocietyRoles).where(eq(userSocietyRoles.societyId, societyId));
+      const uniqueUserIds = Array.from(new Set(members.map((m) => m.userId)));
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < uniqueUserIds.length; i += CHUNK_SIZE) {
+        const chunk = uniqueUserIds.slice(i, i + CHUNK_SIZE);
+        await tx.insert(notifications).values(
+          chunk.map((userId) => ({
+            societyId,
+            userId,
+            title: `New poll: ${parsed.data.question.slice(0, 60)}`,
+            body: `Vote now • ${parsed.data.options.length} options`,
+            channel: "IN_APP" as const,
+            relatedEntity: "poll",
+            relatedId: poll.id,
+          }))
+        );
+      }
       return { poll, options: opts };
     });
     await audit({ actorId: sess.userId, societyId, action: "create", entity: "poll", entityId: result.poll.id, newState: result });

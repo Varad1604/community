@@ -11,6 +11,43 @@ const ALLOWED_MIME_TYPES = new Set([
   "image/webp",
 ]);
 
+function isValidImageSignature(buffer: Buffer, mimeType: string): boolean {
+  if (buffer.length < 12) return false;
+
+  if (mimeType === "image/jpeg") {
+    return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+
+  if (mimeType === "image/png") {
+    return (
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47 &&
+      buffer[4] === 0x0d &&
+      buffer[5] === 0x0a &&
+      buffer[6] === 0x1a &&
+      buffer[7] === 0x0a
+    );
+  }
+
+  if (mimeType === "image/webp") {
+    const isRiff =
+      buffer[0] === 0x52 &&
+      buffer[1] === 0x49 &&
+      buffer[2] === 0x46 &&
+      buffer[3] === 0x46; // "RIFF"
+    const isWebp =
+      buffer[8] === 0x57 &&
+      buffer[9] === 0x45 &&
+      buffer[10] === 0x42 &&
+      buffer[11] === 0x50; // "WEBP"
+    return isRiff && isWebp;
+  }
+
+  return false;
+}
+
 export async function POST(req: Request) {
   const auth = await requireAuthAndSociety("visitor:read");
   if ("error" in auth) return auth.error;
@@ -44,6 +81,14 @@ export async function POST(req: Request) {
     };
 
     const buffer = Buffer.from(await file.arrayBuffer());
+
+    if (!isValidImageSignature(buffer, file.type)) {
+      return NextResponse.json(
+        { error: "File content does not match allowed image format (corrupted or spoofed file)" },
+        { status: 400 }
+      );
+    }
+
     const ext = MIME_TO_EXT[file.type] || "jpg";
     const filename = `${randomUUID()}.${ext}`;
 

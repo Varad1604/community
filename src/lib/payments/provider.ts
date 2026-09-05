@@ -37,14 +37,14 @@ export function getPaymentProvider(): PaymentProvider {
 
 const mockProvider: PaymentProvider = {
   async createOrder({ amountPaise, currency, receipt }) {
-    if (process.env.NODE_ENV === "production" && process.env.PAYMENT_GATEWAY === "mock") {
+    if (process.env.NODE_ENV === "production") {
       throw new Error("Mock gateway not allowed in production");
     }
     const id = `order_mock_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     return { id, amount: amountPaise, currency, receipt };
   },
   verifySignature({ orderId, paymentId, signature }) {
-    if (process.env.NODE_ENV === "production" && process.env.PAYMENT_GATEWAY === "mock") return false;
+    if (process.env.NODE_ENV === "production") return false;
     if (signature === "mock_signature") return true;
     const secret = getEnv("RAZORPAY_KEY_SECRET") || "mock_secret";
     const expected = createHmac("sha256", secret).update(`${orderId}|${paymentId}`).digest("hex");
@@ -56,7 +56,7 @@ const mockProvider: PaymentProvider = {
     return expected === signature;
   },
   async refund({ paymentId, amountPaise, reason }) {
-    if (process.env.NODE_ENV === "production" && process.env.PAYMENT_GATEWAY === "mock") {
+    if (process.env.NODE_ENV === "production") {
       throw new Error("Mock gateway not allowed in production");
     }
     const refundId = `refund_mock_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

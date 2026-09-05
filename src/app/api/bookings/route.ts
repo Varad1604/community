@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bookings, amenities, amenitySlots, units, unitMembers, notifications, bills } from "@/lib/db/schema";
+import { bookings, amenities, amenitySlots, units, unitMembers, notifications, bills, billItems } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
 import { eq, and, desc, inArray, ne, count } from "drizzle-orm";
 import { z } from "zod";
@@ -87,24 +87,58 @@ export async function POST(req: Request) {
       if (memberCheck.length===0 && !isPrivileged) throw new Error("Not a member of unit");
 
       let slotId = parsed.data.slotId || null;
+      let slot: any = null;
       if (slotId) {
-        const [slot] = await tx.select().from(amenitySlots).where(and(eq(amenitySlots.id, slotId), eq(amenitySlots.societyId, societyId), eq(amenitySlots.amenityId, amenity.id)));
-        if (!slot) throw new Error("Slot not in amenity");
+        const [s] = await tx.select().from(amenitySlots).where(and(eq(amenitySlots.id, slotId), eq(amenitySlots.societyId, societyId), eq(amenitySlots.amenityId, amenity.id)));
+        if (!s) throw new Error("Slot not in amenity");
+        slot = s;
       }
 
       const bookingDate = parsed.data.bookingDate;
       const today = new Date().toISOString().slice(0,10);
       if (bookingDate < today) throw new Error("Cannot book past date");
 
-      // P0 FIX: Capacity-aware check using COUNT — replaces broken unique index.
-      // Now we count active (non-CANCELLED) bookings and compare against amenity.capacity.
-      // Concurrency control: Lock parent amenity row to prevent race conditions on capacity
+      // Validate slot start time if booking for today
+      if (bookingDate === today && slot) {
+        const nowHHMM = new Date().toTimeString().slice(0, 5);
+        if (slot.startTime < nowHHMM) {
+          throw Object.assign(new Error("Cannot book a slot that has already started or passed"), { code: "PAST_SLOT" });
+        }
+      }
+
+      // Concurrency control: Lock amenity row and slot row (if specified) to prevent race conditions
       await tx
         .select()
         .from(amenities)
         .where(and(eq(amenities.id, amenity.id), eq(amenities.societyId, societyId)))
         .for("update");
 
+      if (slotId) {
+        await tx
+          .select()
+          .from(amenitySlots)
+          .where(and(eq(amenitySlots.id, slotId), eq(amenitySlots.societyId, societyId)))
+          .for("update");
+      }
+
+      // Check if this user already has an active (non-cancelled) booking for this slot/day
+      const userConditions = [
+        eq(bookings.societyId, societyId),
+        eq(bookings.userId, sess.userId),
+        eq(bookings.amenityId, amenity.id),
+        eq(bookings.bookingDate, bookingDate),
+        ne(bookings.status, "CANCELLED"),
+      ];
+      if (slotId) userConditions.push(eq(bookings.slotId, slotId) as any);
+      const existingUserBookings = await tx.select().from(bookings).where(and(...userConditions as any));
+      if (existingUserBookings.length > 0) {
+        throw Object.assign(
+          new Error("You already have an active booking for this slot on this date"),
+          { code: "ALREADY_BOOKED" }
+        );
+      }
+
+      // Capacity-aware check: count active bookings vs amenity.capacity
       const whereConditions = [
         eq(bookings.amenityId, amenity.id),
         eq(bookings.bookingDate, bookingDate),
@@ -128,22 +162,30 @@ export async function POST(req: Request) {
       const hasFee = Number(amenity.fee) > 0;
       const initialStatus = hasFee ? "PENDING_PAYMENT" : "CONFIRMED";
 
-      // For paid amenities: auto-create a bill first so we can link its id to the booking
+      // For paid amenities: auto-create a bill with line items linked to booking
       let bill = null;
       if (hasFee) {
+        const nextDay = new Date(new Date(bookingDate).getTime() + 86400000).toISOString().slice(0, 10);
         const [b] = await tx.insert(bills).values({
           societyId,
           unitId,
-          title: `${amenity.name} Booking — ${bookingDate}`,
+          title: `${amenity.name} Slot Booking (${bookingDate})`,
           periodStart: bookingDate,
           periodEnd: bookingDate,
-          dueDate: bookingDate,
+          dueDate: nextDay,
           subtotal: amenity.fee,
           tax: "0.00",
           total: amenity.fee,
           status: "ISSUED",
         }).returning();
         bill = b;
+
+        // Auto-generate invoice line item
+        await tx.insert(billItems).values({
+          billId: b.id,
+          label: `${amenity.name} Booking — ${slot ? `${slot.startTime}–${slot.endTime}` : "Full Day"} (${bookingDate})`,
+          amount: amenity.fee,
+        });
       }
 
       const [created] = await tx.insert(bookings).values({
@@ -152,8 +194,16 @@ export async function POST(req: Request) {
         billId: bill ? bill.id : null,
       }).returning();
 
-      if (!hasFee) {
-        // Free amenity — notify immediately
+      if (hasFee) {
+        // Notify resident to complete payment
+        await tx.insert(notifications).values({
+          societyId, userId: sess.userId,
+          title: `Payment required: ${amenity.name}`,
+          body: `Your slot for ${amenity.name} on ${bookingDate} is reserved. Complete payment of ₹${amenity.fee} to confirm.`,
+          channel: "IN_APP", relatedEntity: "booking", relatedId: created.id,
+        });
+      } else {
+        // Free amenity — notify confirmed immediately
         await tx.insert(notifications).values({
           societyId, userId: sess.userId,
           title: `Booking confirmed: ${amenity.name}`,
@@ -162,7 +212,7 @@ export async function POST(req: Request) {
         });
       }
 
-      return { booking: created, bill, amenity, requiresPayment: hasFee };
+      return { booking: created, id: created.id, bill, amenity, slot, requiresPayment: hasFee };
     });
 
     await audit({ actorId: sess.userId, societyId, action:"create", entity:"booking", entityId: result.booking.id, newState: result });
@@ -170,7 +220,11 @@ export async function POST(req: Request) {
   } catch (e:any) {
     const msg = `${e.message || ""} ${e.cause?.message || ""} ${JSON.stringify(e.cause || {})}`;
     if (e.code === "CAPACITY_FULL") return NextResponse.json({ error: e.message }, { status: 409 });
-    if (msg.includes("duplicate") || msg.includes("unique") || msg.includes("23505") || e.code==="23505" || e.cause?.code==="23505") return NextResponse.json({ error:"You already have a booking for this slot on this date" }, { status:409 });
+    if (e.code === "ALREADY_BOOKED" || msg.includes("duplicate") || msg.includes("unique") || msg.includes("23505") || e.code==="23505" || e.cause?.code==="23505") {
+      return NextResponse.json({ error: e.message || "You already have a booking for this slot on this date" }, { status: 409 });
+    }
+    if (e.code === "PAST_SLOT") return NextResponse.json({ error: e.message }, { status: 400 });
+    if (e.message==="Cannot book past date") return NextResponse.json({ error: e.message }, { status: 400 });
     if (e.message==="Amenity not found" || e.message==="Slot not in amenity" || e.message==="Unit not in society") return NextResponse.json({ error:e.message }, { status:404 });
     if (e.message==="Not a member of unit" || e.message==="No unit membership") return NextResponse.json({ error:e.message }, { status:403 });
     if (e.message==="Amenity inactive") return NextResponse.json({ error:e.message }, { status:409 });

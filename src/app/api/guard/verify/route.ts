@@ -38,6 +38,16 @@ export async function POST(req: Request) {
     if (invite.status === "CANCELLED") return NextResponse.json({ error: "This visitor invitation was cancelled", code: "CANCELLED", invite, visitor: maskedVisitor, unit }, { status: 409 });
     if (invite.status === "REJECTED") return NextResponse.json({ error: "This invitation was rejected", code: "REJECTED", invite, visitor: maskedVisitor, unit }, { status: 409 });
     if (invite.status === "EXPIRED" || new Date(invite.validTo) < now) return NextResponse.json({ error: "This visitor pass has expired", code: "EXPIRED", invite, visitor: maskedVisitor, unit }, { status: 409 });
+    if (new Date(invite.validFrom) > now) {
+      return NextResponse.json({
+        error: "This visitor pass is scheduled for a future time",
+        code: "FUTURE_PASS",
+        status: "FUTURE_PASS",
+        invite,
+        visitor: maskedVisitor,
+        unit,
+      }, { status: 409 });
+    }
     if (invite.status === "PENDING") {
       return NextResponse.json({
         invite,
@@ -45,13 +55,25 @@ export async function POST(req: Request) {
         unit,
         status: "PENDING_APPROVAL",
         message: "Pass is awaiting resident approval",
+        isInside: false,
       });
     }
     if (invite.status !== "APPROVED") return NextResponse.json({ error: "Invitation not in valid state", code: "INVALID_STATUS", invite, visitor: maskedVisitor, unit }, { status: 409 });
 
+    if (isInside) {
+      return NextResponse.json({
+        invite,
+        visitor: maskedVisitor,
+        unit,
+        status: "ALREADY_INSIDE",
+        isInside: true,
+        message: "Visitor is currently inside premises",
+      });
+    }
+
     await audit({ actorId: sess.userId, societyId, action: "guard:verify", entity: "visitor_invite", entityId: invite.id, newState: { code } });
 
-    return NextResponse.json({ invite, visitor: maskedVisitor, unit, status: "READY" });
+    return NextResponse.json({ invite, visitor: maskedVisitor, unit, status: "READY", isInside: false });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Failed" }, { status: 500 });
   }

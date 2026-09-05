@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { auditLogs } from "@/lib/db/schema";
 
-export async function audit(params: {
+interface AuditLogEntry {
   actorId: string;
   societyId: string;
   action: string;
@@ -11,7 +11,20 @@ export async function audit(params: {
   newState?: any;
   ip?: string;
   tx?: any;
-}) {
+}
+
+// In-memory dead-letter buffer for audit failures (retained for telemetry/inspection/replay)
+const auditDeadLetterQueue: Array<{ entry: Omit<AuditLogEntry, "tx">; error: string; timestamp: string }> = [];
+
+export function getAuditDeadLetterQueue() {
+  return [...auditDeadLetterQueue];
+}
+
+export function clearAuditDeadLetterQueue() {
+  auditDeadLetterQueue.length = 0;
+}
+
+export async function audit(params: AuditLogEntry) {
   try {
     // Use the restricted app_user connection (db), NOT ownerDb, so that
     // REVOKE UPDATE, DELETE ON audit_logs FROM app_user is actually enforced.
@@ -27,10 +40,21 @@ export async function audit(params: {
       newState: params.newState,
       ip: params.ip,
     });
-  } catch (err) {
+  } catch (err: any) {
+    // Record in local dead-letter queue so telemetry or retry can recover the audit log
+    const { tx: _, ...safeEntry } = params;
+    const failureRecord = {
+      entry: safeEntry,
+      error: err?.message || String(err),
+      timestamp: new Date().toISOString(),
+    };
+    if (auditDeadLetterQueue.length > 500) {
+      auditDeadLetterQueue.shift(); // Bound memory
+    }
+    auditDeadLetterQueue.push(failureRecord);
+
     // Log loudly — a silent audit failure is a compliance violation.
-    // In production, this should also publish to an out-of-band dead-letter queue.
-    console.error("[AUDIT CRITICAL] Failed to record audit log — this is a compliance violation:", {
+    console.error("[AUDIT CRITICAL] Failed to record audit log — retained in dead-letter buffer:", {
       action: params.action,
       entity: params.entity,
       entityId: params.entityId,
@@ -39,4 +63,3 @@ export async function audit(params: {
     });
   }
 }
-

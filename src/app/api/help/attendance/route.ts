@@ -74,8 +74,10 @@ export async function POST(req: Request) {
       const result = await withTenant(societyId, sess.userId, async (tx)=>{
         const [help] = await tx.select().from(dailyHelp).where(and(eq(dailyHelp.id, parsed.data.helpId), eq(dailyHelp.societyId, societyId)));
         if (!help) throw new Error("Help not found");
+        if (!help.isActive) throw new Error("Daily help is deactivated");
         const [link] = await tx.select().from(dailyHelpLinks).where(and(eq(dailyHelpLinks.helpId, parsed.data.helpId), eq(dailyHelpLinks.unitId, parsed.data.unitId), eq(dailyHelpLinks.societyId, societyId)));
         if (!link) throw new Error("Help not linked to unit");
+        if (!link.isActive) throw new Error("Daily help link to this unit is inactive");
         const [unit] = await tx.select().from(units).where(and(eq(units.id, parsed.data.unitId), eq(units.societyId, societyId)));
         if (!unit) throw new Error("Unit not in society");
         const existing = await tx.select().from(dailyHelpAttendance).where(and(eq(dailyHelpAttendance.helpId, parsed.data.helpId), eq(dailyHelpAttendance.unitId, parsed.data.unitId), isNull(dailyHelpAttendance.checkOut)));
@@ -87,6 +89,8 @@ export async function POST(req: Request) {
       return NextResponse.json(result, { status:201 });
     } catch (e:any) {
       if (e.message==="Already checked in") return NextResponse.json({ error:e.message }, { status:409 });
+      if (e.message?.includes("deactivated") || e.message?.includes("inactive")) return NextResponse.json({ error: e.message }, { status: 403 });
+      if (e.message?.includes("not found") || e.message?.includes("not linked") || e.message?.includes("not in society")) return NextResponse.json({ error: e.message }, { status: 404 });
       return NextResponse.json({ error: e.message || "Failed" }, { status:500 });
     }
   } else {

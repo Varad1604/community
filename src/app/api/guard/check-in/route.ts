@@ -42,13 +42,17 @@ export async function POST(req: Request) {
         }
         throw new Error(`Cannot check in: Invite status is ${invite.status}`);
       }
-      if (new Date(invite.validTo) < new Date()) throw new Error("Invite expired");
-      const existing = await tx.select().from(visitorEntries).where(eq(visitorEntries.inviteId, invite.id));
-      if (existing.some(e => !e.checkOut)) throw new Error("Already checked in");
-      const [visitor] = await tx.select().from(visitors).where(eq(visitors.id, invite.visitorId));
+      const now = new Date();
+      if (new Date(invite.validTo) < now) throw new Error("Invite expired");
+      if (new Date(invite.validFrom) > now) throw new Error("Invite is not yet valid (future pass)");
+
       const idempotencyKey = parsed.data.idempotencyKey || randomUUID();
       const existingKey = await tx.select().from(visitorEntries).where(eq(visitorEntries.idempotencyKey, idempotencyKey));
       if (existingKey.length) return existingKey[0];
+
+      const existing = await tx.select().from(visitorEntries).where(eq(visitorEntries.inviteId, invite.id));
+      if (existing.some(e => !e.checkOut)) throw new Error("Already checked in");
+      const [visitor] = await tx.select().from(visitors).where(eq(visitors.id, invite.visitorId));
 
       const checkInTime = parsed.data.offlineTimestamp ? new Date(parsed.data.offlineTimestamp) : new Date();
 
@@ -72,6 +76,7 @@ export async function POST(req: Request) {
   } catch (e: any) {
     const msg = e.message || "Failed";
     if (msg.includes("Already checked in")) return NextResponse.json({ error: msg, code: "ALREADY_INSIDE" }, { status: 409 });
+    if (msg.includes("not yet valid")) return NextResponse.json({ error: msg, code: "FUTURE_PASS" }, { status: 409 });
     if (msg.includes("expired")) return NextResponse.json({ error: msg, code: "EXPIRED" }, { status: 409 });
     if (msg.includes("not found")) return NextResponse.json({ error: "Invite not found", code: "NOT_FOUND" }, { status: 404 });
     return NextResponse.json({ error: msg }, { status: 500 });

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { payments, bills, notifications } from "@/lib/db/schema";
+import { payments, bills, notifications, bookings } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { db, ownerDb } from "@/lib/db";
 import { withTenant } from "@/lib/db/withTenant";
@@ -91,25 +91,38 @@ export async function POST(req: Request) {
     const societyId = payment.societyId;
 
     const result = await withTenant(societyId, payment.payerId, async (tx) => {
-      const [bill] = await tx.select().from(bills).where(and(eq(bills.id, payment.billId!), eq(bills.societyId, societyId)));
+      const [lockedPay] = await tx
+        .select()
+        .from(payments)
+        .where(and(eq(payments.id, payment.id), eq(payments.societyId, societyId)))
+        .for("update");
+      if (!lockedPay) throw new Error("Payment not found");
+      if (lockedPay.status === "SUCCESS") {
+        return { payment: lockedPay, bill: null, alreadySuccess: true };
+      }
+      if (lockedPay.status !== "PENDING") {
+        throw new Error(`Invalid payment status ${lockedPay.status}`);
+      }
+
+      const [bill] = await tx.select().from(bills).where(and(eq(bills.id, lockedPay.billId!), eq(bills.societyId, societyId)));
       if (!bill) throw new Error("Bill not found");
 
+      const expectedPaise = amountToPaise(lockedPay.amount);
       if (amount !== null) {
-        const expectedPaise = amountToPaise(payment.amount);
         if (amount !== expectedPaise) throw new Error("Amount mismatch");
-        const storedOrderPaise = (payment.rawPayload as any)?.amountPaise;
-        if (storedOrderPaise !== undefined && storedOrderPaise !== expectedPaise) throw new Error("Order amount mismatch");
-        const allSuccessForCheck = await tx.select().from(payments).where(and(eq(payments.billId, bill.id), eq(payments.status, "SUCCESS")));
-        const alreadyPaidPaise = allSuccessForCheck.reduce((sum, p) => sum + amountToPaise(p.amount), 0);
-        const totalPaiseCheck = amountToPaise(bill.total);
-        const outstandingCheck = totalPaiseCheck - alreadyPaidPaise;
-        if (expectedPaise > outstandingCheck) throw new Error("Amount exceeds outstanding");
       }
+      const storedOrderPaise = (lockedPay.rawPayload as any)?.amountPaise;
+      if (storedOrderPaise !== undefined && storedOrderPaise !== expectedPaise) throw new Error("Order amount mismatch");
+      const allSuccessForCheck = await tx.select().from(payments).where(and(eq(payments.billId, bill.id), eq(payments.status, "SUCCESS")));
+      const alreadyPaidPaise = allSuccessForCheck.reduce((sum, p) => sum + amountToPaise(p.amount), 0);
+      const totalPaiseCheck = amountToPaise(bill.total);
+      const outstandingCheck = totalPaiseCheck - alreadyPaidPaise;
+      if (expectedPaise > outstandingCheck) throw new Error("Amount exceeds outstanding");
 
       const [updatedPayment] = await tx.update(payments).set({
         status: "SUCCESS",
-        rawPayload: { ...(payment.rawPayload as any), webhookEvent: event, razorpay_payment_id: razorpayPaymentId, razorpay_order_id: razorpayOrderId, webhookVerifiedAt: new Date().toISOString() },
-      }).where(eq(payments.id, payment.id)).returning();
+        rawPayload: { ...(lockedPay.rawPayload as any), webhookEvent: event, razorpay_payment_id: razorpayPaymentId, razorpay_order_id: razorpayOrderId, webhookVerifiedAt: new Date().toISOString() },
+      }).where(eq(payments.id, lockedPay.id)).returning();
 
       const allSuccess = await tx.select().from(payments).where(and(eq(payments.billId, bill.id), eq(payments.status, "SUCCESS")));
       const totalPaise = amountToPaise(bill.total);
@@ -124,18 +137,38 @@ export async function POST(req: Request) {
         updatedBill = ub;
       }
 
+      if (newBillStatus === "PAID") {
+        const [linkedBooking] = await tx.select().from(bookings).where(and(eq(bookings.billId, bill.id), eq(bookings.societyId, societyId)));
+        if (linkedBooking && linkedBooking.status === "PENDING_PAYMENT") {
+          await tx.update(bookings).set({ status: "CONFIRMED" }).where(eq(bookings.id, linkedBooking.id));
+          await tx.insert(notifications).values({
+            societyId,
+            userId: linkedBooking.userId,
+            title: `Booking confirmed! 🎉`,
+            body: `Your amenity booking has been confirmed. Pass is now active.`,
+            channel: "IN_APP",
+            relatedEntity: "booking",
+            relatedId: linkedBooking.id,
+          });
+        }
+      }
+
       await tx.insert(notifications).values({
         societyId,
-        userId: payment.payerId,
-        title: `Payment successful: ₹${payment.amount}`,
-        body: `Bill ${bill.title} • Ref ${(payment.gatewayRef || "").slice(0,12)}`,
+        userId: lockedPay.payerId,
+        title: `Payment successful: ₹${lockedPay.amount}`,
+        body: `Bill ${bill.title} • Ref ${(lockedPay.gatewayRef || "").slice(0,12)}`,
         channel: "IN_APP",
         relatedEntity: "payment",
-        relatedId: payment.id,
+        relatedId: lockedPay.id,
       });
 
-      return { payment: updatedPayment, bill: updatedBill };
+      return { payment: updatedPayment, bill: updatedBill, alreadySuccess: false };
     });
+
+    if ((result as any).alreadySuccess) {
+      return NextResponse.json({ success: true, alreadyProcessed: true });
+    }
 
     await audit({ actorId: payment.payerId, societyId: payment.societyId, action: "payment:webhook_success", entity: "payment", entityId: payment.id, newState: { gatewayRef: razorpayOrderId, status: "SUCCESS" } });
 

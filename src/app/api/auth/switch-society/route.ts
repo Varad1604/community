@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { userSocietyRoles } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { cookies } from "next/headers";
+import crypto from "crypto";
 
 export async function POST(req: Request) {
   try {
@@ -24,8 +25,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Forbidden: Not a member of this society" }, { status: 403 });
     }
 
+    const secret = process.env.BETTER_AUTH_SECRET || process.env.NEXTAUTH_SECRET || "dev-secret-32chars-long-change-me-fallback-only-dev";
+    const sig = crypto.createHmac("sha256", secret).update(societyId).digest("hex");
+    const signedValue = `${societyId}.${sig}`;
+
     const cookieStore = await cookies();
-    cookieStore.set("active_society", societyId, {
+    cookieStore.set("active_society", signedValue, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

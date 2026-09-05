@@ -5,7 +5,6 @@ import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { withTenant } from "@/lib/db/withTenant";
 import { audit } from "@/lib/audit";
-import { db } from "@/lib/db";
 
 export async function GET() {
   const auth = await requireAuthAndSociety("announcement:read");
@@ -64,30 +63,32 @@ export async function POST(req: Request) {
       newState: item,
     });
 
-    // P1 FIX: Asynchronous chunked notification fan-out via Next.js after().
+    // P1 FIX: Asynchronous chunked notification fan-out via Next.js after() with RLS tenant context.
     after(async () => {
       try {
-        const members = await db
-          .select({ userId: userSocietyRoles.userId })
-          .from(userSocietyRoles)
-          .where(eq(userSocietyRoles.societyId, societyId));
+        await withTenant(societyId, sess.userId, async (tx) => {
+          const members = await tx
+            .select({ userId: userSocietyRoles.userId })
+            .from(userSocietyRoles)
+            .where(eq(userSocietyRoles.societyId, societyId));
 
-        const uniqueUserIds = Array.from(new Set(members.map((m) => m.userId)));
-        const CHUNK_SIZE = 500;
-        for (let i = 0; i < uniqueUserIds.length; i += CHUNK_SIZE) {
-          const chunk = uniqueUserIds.slice(i, i + CHUNK_SIZE);
-          await db.insert(notifications).values(
-            chunk.map((userId) => ({
-              societyId,
-              userId,
-              title: `📢 Announcement: ${parsed.data.title}`,
-              body: parsed.data.body.slice(0, 120),
-              channel: "IN_APP" as const,
-              relatedEntity: "announcement",
-              relatedId: item.id,
-            }))
-          );
-        }
+          const uniqueUserIds = Array.from(new Set(members.map((m) => m.userId)));
+          const CHUNK_SIZE = 500;
+          for (let i = 0; i < uniqueUserIds.length; i += CHUNK_SIZE) {
+            const chunk = uniqueUserIds.slice(i, i + CHUNK_SIZE);
+            await tx.insert(notifications).values(
+              chunk.map((userId) => ({
+                societyId,
+                userId,
+                title: `📢 Announcement: ${parsed.data.title}`,
+                body: parsed.data.body.slice(0, 120),
+                channel: "IN_APP" as const,
+                relatedEntity: "announcement",
+                relatedId: item.id,
+              }))
+            );
+          }
+        });
       } catch (err) {
         console.error("[ANNOUNCEMENT FAN-OUT ERROR]", err);
       }

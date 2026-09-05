@@ -50,7 +50,7 @@ const createSchema = z.object({
   subtotal: z.string().refine(isDecimal, "Invalid subtotal"),
   tax: z.string().refine(isDecimal, "Invalid tax").optional(),
   total: z.string().refine(isDecimal, "Invalid total"),
-  status: z.enum(["DRAFT","ISSUED","OVERDUE","PAID","PARTIAL"]).optional(),
+  status: z.enum(["DRAFT", "ISSUED", "OVERDUE", "PAID", "PARTIAL", "CANCELLED"]).optional(),
   items: z.array(z.object({
     label: z.string().min(1),
     amount: z.string().refine(isDecimal, "Invalid item amount"),

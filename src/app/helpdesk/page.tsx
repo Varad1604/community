@@ -33,7 +33,7 @@ export default function HelpdeskPage(){
                 key={t.id}
                 href={`/helpdesk/${t.id}`}
                 title={t.title}
-                subtitle={`${t.category} • ${t.priority}`}
+                subtitle={`${t.unit?.number ? `Unit ${t.unit.number} • ` : ""}${t.category} • ${t.priority}`}
                 meta={new Date(t.createdAt).toLocaleString()}
                 status={t.status}
                 categoryBadge={t.category}

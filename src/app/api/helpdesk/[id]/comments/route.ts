@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { helpdeskTickets, ticketComments, notifications, unitMembers } from "@/lib/db/schema";
+import { helpdeskTickets, ticketComments, notifications, unitMembers, users, userSocietyRoles } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
 import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
@@ -23,7 +23,25 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         const isOwner = ticket.raisedBy === sess.userId || unitIds.includes(ticket.unitId);
         if (!isOwner) throw new Error("Forbidden");
       }
-      return tx.select().from(ticketComments).where(eq(ticketComments.ticketId, id)).orderBy(desc(ticketComments.createdAt));
+      const list = await tx.select().from(ticketComments).where(eq(ticketComments.ticketId, id)).orderBy(desc(ticketComments.createdAt));
+      return await Promise.all(
+        list.map(async (c) => {
+          const [u] = await tx
+            .select({ id: users.id, fullName: users.fullName, phone: users.phone })
+            .from(users)
+            .where(eq(users.id, c.authorId));
+
+          const [usr] = await tx
+            .select({ role: userSocietyRoles.role })
+            .from(userSocietyRoles)
+            .where(and(eq(userSocietyRoles.userId, c.authorId), eq(userSocietyRoles.societyId, societyId)));
+
+          return {
+            ...c,
+            author: u ? { id: u.id, fullName: u.fullName, phone: u.phone, role: usr?.role || "MEMBER" } : null,
+          };
+        })
+      );
     });
     return NextResponse.json(comments);
   } catch (e: any) {
@@ -53,24 +71,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const isOwner = ticket.raisedBy === sess.userId || unitIds.includes(ticket.unitId);
         if (!isOwner) throw new Error("Forbidden");
       }
-      const [created] = await tx.insert(ticketComments).values({ ticketId: id, authorId: sess.userId, body: parsed.data.body }).returning();
-      const notifyUserId = ticket.raisedBy === sess.userId ? ticket.assigneeId : ticket.raisedBy;
-      if (notifyUserId && notifyUserId !== sess.userId) {
+      const { ownerDb } = await import("@/lib/db");
+      const [created] = await ownerDb.insert(ticketComments).values({ ticketId: id, authorId: sess.userId, body: parsed.data.body }).returning();
+
+      const recipients = new Set<string>();
+      if (ticket.raisedBy !== sess.userId) {
+        recipients.add(ticket.raisedBy);
+      }
+      if (ticket.assigneeId && ticket.assigneeId !== sess.userId) {
+        recipients.add(ticket.assigneeId);
+      }
+
+      for (const recipientId of recipients) {
+        const isAuthor = recipientId === ticket.raisedBy;
         await tx.insert(notifications).values({
           societyId,
-          userId: notifyUserId,
-          title: `New comment on ${ticket.title.slice(0,30)}`,
-          body: parsed.data.body.slice(0,100),
-          channel: "IN_APP",
-          relatedEntity: "ticket",
-          relatedId: ticket.id,
-        });
-      } else if (!notifyUserId && ticket.raisedBy !== sess.userId) {
-        await tx.insert(notifications).values({
-          societyId,
-          userId: ticket.raisedBy,
-          title: `Staff replied: ${ticket.title.slice(0,30)}`,
-          body: parsed.data.body.slice(0,100),
+          userId: recipientId,
+          title: isAuthor ? `Update on ${ticket.title.slice(0, 30)}` : `New comment on ${ticket.title.slice(0, 30)}`,
+          body: parsed.data.body.slice(0, 100),
           channel: "IN_APP",
           relatedEntity: "ticket",
           relatedId: ticket.id,

@@ -45,7 +45,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 const patchSchema = z.object({
   title: z.string().min(1).max(100).optional(),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  status: z.enum(["DRAFT","ISSUED","OVERDUE","PAID","PARTIAL"]).optional(),
+  status: z.enum(["DRAFT", "ISSUED", "OVERDUE", "PAID", "PARTIAL", "CANCELLED"]).optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -55,19 +55,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { id } = await params;
     const body = await req.json();
     const parsed = patchSchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error:"Invalid input" }, { status:400 });
+    if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     const { societyId, sess } = auth as any;
-    const updated = await withTenant(societyId, sess.userId, async (tx)=>{
+    const updated = await withTenant(societyId, sess.userId, async (tx) => {
       const [bill] = await tx.select().from(bills).where(and(eq(bills.id, id), eq(bills.societyId, societyId)));
       if (!bill) throw new Error("Not found");
-      const allowed:any={};
+      if (bill.status === "PAID") throw new Error("Cannot modify a paid bill");
+
+      const allowed: any = {};
       if (parsed.data.title) allowed.title = parsed.data.title;
       if (parsed.data.dueDate) allowed.dueDate = parsed.data.dueDate as any;
       if (parsed.data.status) {
-        if (parsed.data.status==="PAID" && bill.status!=="PAID") throw new Error("Cannot directly mark PAID without payment");
+        if (parsed.data.status === "PAID") throw new Error("Cannot directly mark PAID without payment");
         allowed.status = parsed.data.status;
       }
-      if (Object.keys(allowed).length===0) throw new Error("No updates");
+      if (Object.keys(allowed).length === 0) throw new Error("No updates");
       const [upd] = await tx.update(bills).set(allowed).where(and(eq(bills.id, id), eq(bills.societyId, societyId))).returning();
       return { prev: bill, upd };
     });

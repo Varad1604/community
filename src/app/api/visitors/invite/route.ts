@@ -50,7 +50,17 @@ export async function POST(req: Request) {
       const validTo = parsed.data.validTo ? new Date(parsed.data.validTo) : parsed.data.visitDate ? new Date(parsed.data.visitDate) : new Date(Date.now() + 86400000);
       if (validTo <= validFrom) throw new Error("Valid until must be after valid from");
       const [invite] = await tx.insert(visitorInvites).values({
-        societyId, unitId, visitorId: visitor.id, createdBy: sess.userId, code, qrToken, purpose: parsed.data.purpose, validFrom, validTo,
+        societyId,
+        unitId,
+        visitorId: visitor.id,
+        createdBy: sess.userId,
+        approvedBy: sess.userId,
+        status: "APPROVED",
+        code,
+        qrToken,
+        purpose: parsed.data.purpose,
+        validFrom,
+        validTo,
       }).returning();
       return { visitor, invite, unitId };
     });

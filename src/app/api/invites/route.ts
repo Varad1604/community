@@ -88,6 +88,8 @@ export async function POST(req: Request) {
         unitId: parsed.data.unitId,
         visitorId: parsed.data.visitorId,
         createdBy: sess.userId,
+        approvedBy: sess.userId,
+        status: "APPROVED",
         code,
         purpose: parsed.data.purpose,
         validTo: parsed.data.validTo ? new Date(parsed.data.validTo) : new Date(Date.now() + 86400000),

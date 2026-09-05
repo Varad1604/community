@@ -9,8 +9,41 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Shield, Clock, Building2, Users, LogIn, LogOut, Search, UserPlus, QrCode, Phone, MapPin, AlertTriangle, Package, HeartHandshake, Car, Wifi, WifiOff, RefreshCw } from "lucide-react";
-import { cacheApprovedInvites, findCachedInvite, queueOfflineEntry, getPendingOfflineEntries, markEntrySynced } from "@/lib/offline/db";
+import { Shield, Clock, Building2, Users, LogIn, LogOut, Search, UserPlus, QrCode, Phone, MapPin, AlertTriangle, Package, HeartHandshake, Car, Wifi, WifiOff, RefreshCw, FileText, CheckCircle2, XCircle, History, RotateCcw, Trash2 } from "lucide-react";
+import {
+  cacheApprovedInvites,
+  findCachedInvite,
+  queueOfflineEntry,
+  getPendingOfflineEntries,
+  getAllOfflineQueueEntries,
+  markEntrySynced,
+  markEntryFailed,
+  retryFailedEntry,
+  dismissFailedEntry,
+  clearSyncedEntries,
+  cacheActiveInside,
+  getCachedInside,
+  removeCachedInside,
+  cacheDailyHelp,
+  getCachedDailyHelp,
+  findCachedDailyHelp,
+  OfflineEntry,
+} from "@/lib/offline/db";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 export default function GuardConsole() {
   const [society, setSociety] = useState<any>(null);
@@ -27,11 +60,13 @@ export default function GuardConsole() {
   const [walkin, setWalkin] = useState({ visitorName:"", phone:"", purpose:"Guest", unitId:"" });
   const [residentQuery, setResidentQuery] = useState("");
   const [residentResults, setResidentResults] = useState<any[]>([]);
+  const [activeWalkinIndex, setActiveWalkinIndex] = useState(-1);
   const [tab, setTab] = useState("verify");
   const [deliveries, setDeliveries] = useState<any[]>([]);
   const [deliveryForm, setDeliveryForm] = useState({ courierName:"", awb:"", unitId:"" });
   const [deliveryQuery, setDeliveryQuery] = useState("");
   const [deliveryResults, setDeliveryResults] = useState<any[]>([]);
+  const [activeDeliveryIndex, setActiveDeliveryIndex] = useState(-1);
   const [helpList, setHelpList] = useState<any[]>([]);
   const [helpAttendance, setHelpAttendance] = useState<any[]>([]);
   const [helpQuery, setHelpQuery] = useState("");
@@ -43,21 +78,142 @@ export default function GuardConsole() {
   const [emergencies, setEmergencies] = useState<any[]>([]);
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   const [pendingCount, setPendingCount] = useState(0);
+  const [unitList, setUnitList] = useState<any[]>([]);
+  const [syncDrawerOpen, setSyncDrawerOpen] = useState(false);
+  const [queueItems, setQueueItems] = useState<OfflineEntry[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [manualPassOpen, setManualPassOpen] = useState(false);
+  const [manualPassForm, setManualPassForm] = useState({
+    name: "",
+    phone: "",
+    unitId: "",
+    purpose: "Delivery / Service",
+    vehicleNumber: "",
+    notes: "",
+  });
+  const [isSubmittingPass, setIsSubmittingPass] = useState(false);
   const prevEmergencyCount = useRef<number>(0);
 
   async function refreshPendingCount() {
     const list = await getPendingOfflineEntries();
     setPendingCount(list.length);
+    const all = await getAllOfflineQueueEntries();
+    setQueueItems(all);
+  }
+
+  async function openSyncDrawer() {
+    await refreshPendingCount();
+    setSyncDrawerOpen(true);
+  }
+
+  async function handleRetryFailed(key: string) {
+    await retryFailedEntry(key);
+    toast.info("Entry reset to pending status for next sync");
+    await refreshPendingCount();
+  }
+
+  async function handleDismissFailed(key: string) {
+    await dismissFailedEntry(key);
+    toast.info("Entry dismissed from queue");
+    await refreshPendingCount();
+  }
+
+  async function clearSyncedEntriesHandler() {
+    await clearSyncedEntries();
+    toast.success("Cleared synced entries from local store");
+    await refreshPendingCount();
+  }
+
+  async function submitManualPass() {
+    if (!manualPassForm.name.trim()) return toast.error("Enter visitor name");
+    if (!manualPassForm.phone.trim()) return toast.error("Enter phone number");
+    if (!manualPassForm.unitId) return toast.error("Select destination unit");
+
+    setIsSubmittingPass(true);
+    const idempotencyKey = crypto.randomUUID();
+    const payload = {
+      name: manualPassForm.name.trim(),
+      phone: manualPassForm.phone.trim(),
+      unitId: manualPassForm.unitId,
+      purpose: manualPassForm.purpose,
+      vehicleNumber: manualPassForm.vehicleNumber.trim() || undefined,
+      gateId: selectedGate || undefined,
+      notes: manualPassForm.notes.trim() || undefined,
+      offlineTimestamp: new Date().toISOString(),
+      idempotencyKey,
+    };
+
+    if (!navigator.onLine) {
+      await queueOfflineEntry({
+        idempotencyKey,
+        entryType: "MANUAL_PASS",
+        actionType: "MANUAL_PASS",
+        payload,
+        notes: `Unit: ${unitList.find(u => u.id === manualPassForm.unitId)?.number || "Flat"} • ${manualPassForm.name}`,
+        timestamp: new Date().toISOString(),
+      });
+      const destUnit = unitList.find(u => u.id === manualPassForm.unitId);
+      const newInside: any = {
+        entry: { id: idempotencyKey, checkIn: new Date().toISOString(), isOffline: true },
+        visitor: { name: manualPassForm.name, phone: manualPassForm.phone, vehicleNumber: manualPassForm.vehicleNumber },
+        unit: { number: destUnit?.number || "General" },
+        type: "VISITOR",
+        isOfflineManual: true,
+      };
+      setInside(prev => [newInside, ...prev]);
+      await refreshPendingCount();
+      setIsSubmittingPass(false);
+      setManualPassOpen(false);
+      setManualPassForm({ name: "", phone: "", unitId: "", purpose: "Delivery / Service", vehicleNumber: "", notes: "" });
+      toast.success("Emergency Manual Pass recorded in offline queue. Access granted.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/guard/manual-pass", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        toast.error(d.error || "Failed to create manual pass");
+      } else {
+        toast.success("Emergency Manual Pass issued. Entry recorded.");
+        setManualPassOpen(false);
+        setManualPassForm({ name: "", phone: "", unitId: "", purpose: "Delivery / Service", vehicleNumber: "", notes: "" });
+        loadInside();
+      }
+    } catch {
+      await queueOfflineEntry({
+        idempotencyKey,
+        entryType: "MANUAL_PASS",
+        actionType: "MANUAL_PASS",
+        payload,
+        notes: `Unit: ${unitList.find(u => u.id === manualPassForm.unitId)?.number || "Flat"} • ${manualPassForm.name}`,
+        timestamp: new Date().toISOString(),
+      });
+      toast.warning("Network interrupted. Pass saved to offline queue.");
+      setManualPassOpen(false);
+      refreshPendingCount();
+    } finally {
+      setIsSubmittingPass(false);
+    }
   }
 
   async function syncOfflineQueue() {
     const list = await getPendingOfflineEntries();
     if (list.length === 0) return;
+    setIsSyncing(true);
     toast.info(`Syncing ${list.length} offline operation(s)...`);
+    let syncedCount = 0;
+    let failedCount = 0;
+
     for (const item of list) {
       try {
+        let res: Response | null = null;
         if (!item.actionType || item.actionType === "VISITOR_CHECKIN") {
-          const res = await fetch("/api/guard/check-in", {
+          res = await fetch("/api/guard/check-in", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -68,45 +224,64 @@ export default function GuardConsole() {
               isOffline: true,
             }),
           });
-          if (res.ok || res.status === 409) {
-            await markEntrySynced(item.idempotencyKey);
-          }
         } else if (item.actionType === "VISITOR_CHECKOUT" && item.entryId) {
-          const res = await fetch("/api/guard/check-out", {
+          res = await fetch("/api/guard/check-out", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ entryId: item.entryId }),
+            body: JSON.stringify({
+              entryId: item.entryId,
+              idempotencyKey: item.idempotencyKey,
+              offlineTimestamp: item.timestamp,
+              isOffline: true,
+            }),
           });
-          if (res.ok || res.status === 409) {
-            await markEntrySynced(item.idempotencyKey);
-          }
+        } else if (item.actionType === "MANUAL_PASS") {
+          res = await fetch("/api/guard/manual-pass", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(item.payload || {}),
+          });
         } else if (item.actionType === "DELIVERY_LOG") {
-          const res = await fetch("/api/deliveries", {
+          res = await fetch("/api/deliveries", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(item.payload || {}),
           });
-          if (res.ok || res.status === 409) {
-            await markEntrySynced(item.idempotencyKey);
-          }
         } else if (item.actionType === "HELP_CHECKIN" || item.actionType === "HELP_CHECKOUT") {
-          const res = await fetch("/api/help/attendance", {
+          res = await fetch("/api/help/attendance", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(item.payload || {}),
           });
+        }
+
+        if (res) {
           if (res.ok || res.status === 409) {
             await markEntrySynced(item.idempotencyKey);
+            syncedCount++;
+          } else if (res.status >= 400) {
+            const errData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+            const reason = errData.error || `HTTP ${res.status}`;
+            await markEntryFailed(item.idempotencyKey, reason);
+            failedCount++;
+            toast.error(`Sync failed for ${item.entryType || item.actionType || "entry"}: ${reason}`);
           }
         }
-      } catch {}
+      } catch (err: any) {
+        console.error("[SYNC ERROR]", err);
+      }
     }
+    setIsSyncing(false);
     await refreshPendingCount();
     loadExpected();
     loadInside();
     loadDeliveries();
     loadHelpAttendance();
-    toast.success("Offline queue sync complete");
+    if (failedCount > 0) {
+      toast.warning(`Sync finished: ${syncedCount} synced, ${failedCount} failed`);
+    } else {
+      toast.success("Offline queue sync complete");
+    }
   }
 
   useEffect(() => {
@@ -222,10 +397,95 @@ export default function GuardConsole() {
       }
     } catch {}
   }
-  async function loadInside(){ fetch("/api/guard/inside").then(r=>r.json()).then(d=> setInside(Array.isArray(d)? d : [])).catch(()=>{}); }
-  async function loadDeliveries(){ fetch("/api/deliveries").then(r=>r.json()).then(d=> setDeliveries(Array.isArray(d)? d : [])).catch(()=>{}); }
-  async function loadHelp(){ fetch("/api/help").then(r=>r.json()).then(d=> setHelpList(Array.isArray(d)? d : [])).catch(()=>{}); }
-  async function loadHelpAttendance(){ fetch("/api/help/attendance").then(r=>r.json()).then(d=> setHelpAttendance(Array.isArray(d)? d : [])).catch(()=>{}); }
+  async function loadInside() {
+    try {
+      const res = await fetch("/api/guard/inside");
+      const d = await res.json();
+      if (Array.isArray(d)) {
+        setInside(d);
+        cacheActiveInside(
+          d.map((item: any) => ({
+            id: item.entry.id,
+            inviteId: item.entry.inviteId,
+            name: item.visitor?.name || "Visitor",
+            phone: item.visitor?.phone,
+            type: item.type || "VISITOR",
+            unit: item.unit ? `${item.unit.number} (${item.building?.name || ""})` : "General",
+            checkIn: item.entry.checkIn,
+            vehicleNumber: item.visitor?.vehicleNumber,
+            cachedAt: Date.now(),
+          }))
+        );
+      }
+    } catch {
+      if (!navigator.onLine) {
+        const cached = await getCachedInside();
+        if (cached.length > 0) {
+          setInside(
+            cached.map((c) => ({
+              entry: { id: c.id, checkIn: c.checkIn, inviteId: c.inviteId },
+              visitor: { name: c.name, phone: c.phone, vehicleNumber: c.vehicleNumber },
+              unit: { number: c.unit },
+              type: c.type,
+              isOfflineCached: true,
+            }))
+          );
+        }
+      }
+    }
+  }
+
+  async function loadDeliveries() {
+    try {
+      const res = await fetch("/api/deliveries");
+      const d = await res.json();
+      if (Array.isArray(d)) setDeliveries(d);
+    } catch {}
+  }
+
+  async function loadHelp() {
+    try {
+      const res = await fetch("/api/help");
+      const d = await res.json();
+      if (Array.isArray(d)) {
+        setHelpList(d);
+        cacheDailyHelp(
+          d.map((h: any) => ({
+            id: h.id,
+            name: h.fullName,
+            phone: h.phone,
+            serviceType: h.serviceType,
+            agency: h.agency,
+            passcode: h.passcode,
+            cachedAt: Date.now(),
+          }))
+        );
+      }
+    } catch {
+      if (!navigator.onLine) {
+        const cached = await getCachedDailyHelp();
+        if (cached.length > 0) {
+          setHelpList(
+            cached.map((c) => ({
+              id: c.id,
+              fullName: c.name,
+              phone: c.phone,
+              serviceType: c.serviceType,
+              agency: c.agency,
+            }))
+          );
+        }
+      }
+    }
+  }
+
+  async function loadHelpAttendance() {
+    try {
+      const res = await fetch("/api/help/attendance");
+      const d = await res.json();
+      if (Array.isArray(d)) setHelpAttendance(d);
+    } catch {}
+  }
 
   async function verify(){
     if (!code.trim()) return toast.error("Enter pass code");
@@ -355,6 +615,7 @@ export default function GuardConsole() {
         actionType: "VISITOR_CHECKOUT",
         timestamp: new Date().toISOString(),
       });
+      await removeCachedInside(entryId);
       toast.info("Check-out saved to offline queue (will sync when online)");
       setInside((prev) => prev.filter((item) => item.entry.id !== entryId));
       refreshPendingCount();
@@ -379,6 +640,29 @@ export default function GuardConsole() {
     const res = await fetch(`/api/guard/resident-search?q=${encodeURIComponent(residentQuery)}`);
     const d = await res.json();
     setResidentResults(Array.isArray(d) ? d : []);
+    setActiveWalkinIndex(-1);
+  }
+
+  function handleWalkinSearchKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (residentResults.length > 0 && activeWalkinIndex >= 0) {
+        setWalkin({ ...walkin, unitId: residentResults[activeWalkinIndex].unit.id });
+        setResidentResults([]);
+        setActiveWalkinIndex(-1);
+      } else {
+        searchResident();
+      }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveWalkinIndex(prev => Math.min(prev + 1, residentResults.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveWalkinIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === "Escape") {
+      setResidentResults([]);
+      setActiveWalkinIndex(-1);
+    }
   }
 
   async function doWalkIn() {
@@ -408,6 +692,29 @@ export default function GuardConsole() {
     const res = await fetch(`/api/guard/resident-search?q=${encodeURIComponent(deliveryQuery)}`);
     const d = await res.json();
     setDeliveryResults(Array.isArray(d)? d : []);
+    setActiveDeliveryIndex(-1);
+  }
+
+  function handleDeliverySearchKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (deliveryResults.length > 0 && activeDeliveryIndex >= 0) {
+        setDeliveryForm({ ...deliveryForm, unitId: deliveryResults[activeDeliveryIndex].unit.id });
+        setDeliveryResults([]);
+        setActiveDeliveryIndex(-1);
+      } else {
+        searchDeliveryUnit();
+      }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveDeliveryIndex(prev => Math.min(prev + 1, deliveryResults.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveDeliveryIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === "Escape") {
+      setDeliveryResults([]);
+      setActiveDeliveryIndex(-1);
+    }
   }
   async function recordDelivery(){
     if (!deliveryForm.courierName || !deliveryForm.unitId) return toast.error("Enter courier and unit");
@@ -520,23 +827,46 @@ export default function GuardConsole() {
                 <Shield className="h-5 w-5 text-primary" />
                 Gate Terminal
               </h1>
-              {isOnline ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono tracking-wider font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40">
-                  <Wifi className="h-3 w-3" /> ONLINE • 24H ALLOWLIST ACTIVE
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono tracking-wider font-semibold border border-red-300 text-red-700 bg-red-50 dark:bg-red-950/40 animate-pulse">
-                  <WifiOff className="h-3 w-3" /> OFFLINE MODE (ALLOWLIST RUNNING)
-                </span>
-              )}
-              {pendingCount > 0 && (
-                <button
-                  onClick={syncOfflineQueue}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono tracking-wider font-semibold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer transition-colors"
-                >
-                  <RefreshCw className="h-3 w-3 animate-spin" /> {pendingCount} PENDING SYNC
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={openSyncDrawer}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono tracking-wider font-semibold border transition-all cursor-pointer ${
+                  isOnline
+                    ? "border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800"
+                    : "border-amber-400 text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 dark:border-amber-700 animate-pulse"
+                }`}
+                title="Click to inspect Offline Queue & Local Allowlist"
+              >
+                {isOnline ? <Wifi className="h-3 w-3 text-emerald-600" /> : <WifiOff className="h-3 w-3 text-amber-600" />}
+                {isOnline ? "ONLINE • 24H ALLOWLIST" : "OFFLINE MODE ACTIVE"}
+              </button>
+
+              <button
+                type="button"
+                onClick={openSyncDrawer}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono tracking-wider font-semibold border border-border/80 bg-secondary/80 hover:bg-secondary text-foreground cursor-pointer transition-colors"
+                title="View sync queue details"
+              >
+                <History className="h-3 w-3 text-primary" />
+                <span>SYNC QUEUE</span>
+                {pendingCount > 0 ? (
+                  <span className="bg-amber-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                    {pendingCount}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground text-[10px]">0</span>
+                )}
+              </button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                type="button"
+                onClick={() => setManualPassOpen(true)}
+                className="h-7 text-xs font-mono font-semibold border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1.5"
+              >
+                <FileText className="h-3.5 w-3.5" /> Emergency Pass
+              </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-1 font-mono">
               {society?.name || "Green Acres"} • {gates.find(g => g.id === selectedGate)?.name || "Main Gate"} • Security Officer: {guard?.fullName || "On Duty"}
@@ -862,13 +1192,13 @@ export default function GuardConsole() {
                 <div className="space-y-1"><Label htmlFor="guard-delivery-unit">Destination Unit *</Label><Input id="guard-delivery-unit" value={deliveryForm.unitId} onChange={e=>setDeliveryForm({...deliveryForm, unitId:e.target.value})} placeholder="Unit ID or search below" className="font-mono text-xs" /></div>
                 <div className="flex gap-2">
                   <Label htmlFor="guard-delivery-search" className="sr-only">Search unit for delivery</Label>
-                  <Input id="guard-delivery-search" value={deliveryQuery} onChange={e=>setDeliveryQuery(e.target.value)} placeholder="Search unit e.g. A-101" className="flex-1" aria-label="Search unit for delivery" />
+                  <Input id="guard-delivery-search" value={deliveryQuery} onChange={e=>setDeliveryQuery(e.target.value)} onKeyDown={handleDeliverySearchKeyDown} placeholder="Search unit e.g. A-101" className="flex-1" aria-label="Search unit for delivery" />
                   <Button type="button" variant="outline" onClick={searchDeliveryUnit} aria-label="Find unit for delivery"><Search className="h-4 w-4 mr-1" aria-hidden />Find</Button>
                 </div>
                 {deliveryResults.length>0 && (
-                  <div className="rounded-lg border divide-y max-h-40 overflow-auto">
-                    {deliveryResults.map((r:any)=>(
-                      <button key={r.unit.id} onClick={()=>setDeliveryForm({...deliveryForm, unitId: r.unit.id})} className="w-full text-left px-3 py-2 hover:bg-muted flex justify-between">
+                  <div className="rounded-lg border divide-y max-h-40 overflow-auto" role="listbox">
+                    {deliveryResults.map((r:any, idx: number)=>(
+                      <button key={r.unit.id} onClick={()=>{setDeliveryForm({...deliveryForm, unitId: r.unit.id}); setDeliveryResults([]); setActiveDeliveryIndex(-1);}} className={`w-full text-left px-3 py-2 hover:bg-muted flex justify-between transition-colors ${idx === activeDeliveryIndex ? "bg-accent text-accent-foreground font-semibold" : ""}`} role="option" aria-selected={idx === activeDeliveryIndex}>
                         <span className="text-sm font-medium">{r.unit.number} • {r.residents[0]?.user?.fullName || "Resident"}</span>
                         <span className="text-xs text-muted-foreground">{r.unit.type}</span>
                       </button>
@@ -1097,13 +1427,13 @@ export default function GuardConsole() {
                 </div>
                 <div className="flex gap-2">
                   <Label htmlFor="guard-walkin-search" className="sr-only">Search unit or resident</Label>
-                  <Input id="guard-walkin-search" value={residentQuery} onChange={e=>setResidentQuery(e.target.value)} placeholder="Search unit / resident e.g. A-101" className="flex-1" aria-label="Search unit or resident for walk-in" />
+                  <Input id="guard-walkin-search" value={residentQuery} onChange={e=>setResidentQuery(e.target.value)} onKeyDown={handleWalkinSearchKeyDown} placeholder="Search unit / resident e.g. A-101" className="flex-1" aria-label="Search unit or resident for walk-in" />
                   <Button type="button" variant="outline" onClick={searchResident} aria-label="Find resident unit"><Search className="h-4 w-4 mr-1" aria-hidden />Find</Button>
                 </div>
                 {residentResults.length>0 && (
-                  <div className="rounded-lg border divide-y max-h-40 overflow-auto">
-                    {residentResults.map((r:any)=>(
-                      <button key={r.unit.id} onClick={()=>setWalkin({...walkin, unitId: r.unit.id})} className="w-full text-left px-3 py-2 hover:bg-muted flex justify-between">
+                  <div className="rounded-lg border divide-y max-h-40 overflow-auto" role="listbox">
+                    {residentResults.map((r:any, idx: number)=>(
+                      <button key={r.unit.id} onClick={()=>{setWalkin({...walkin, unitId: r.unit.id}); setResidentResults([]); setActiveWalkinIndex(-1);}} className={`w-full text-left px-3 py-2 hover:bg-muted flex justify-between transition-colors ${idx === activeWalkinIndex ? "bg-accent text-accent-foreground font-semibold" : ""}`} role="option" aria-selected={idx === activeWalkinIndex}>
                         <span className="text-sm font-medium">{r.unit.number} • {r.residents[0]?.user?.fullName || "Resident"}</span>
                         <span className="text-xs text-muted-foreground">{r.unit.type}</span>
                       </button>
@@ -1117,6 +1447,250 @@ export default function GuardConsole() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* OFFLINE SYNC QUEUE DRAWER */}
+      <Sheet open={syncDrawerOpen} onOpenChange={setSyncDrawerOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col">
+          <SheetHeader className="p-5 border-b border-border/70">
+            <div className="flex items-center justify-between">
+              <SheetTitle className="text-base font-semibold flex items-center gap-2">
+                <History className="h-4 w-4 text-primary" />
+                Offline Terminal & Sync Queue
+              </SheetTitle>
+              <Badge variant={isOnline ? "default" : "destructive"} className="text-[10px] font-mono">
+                {isOnline ? "ONLINE" : "OFFLINE"}
+              </Badge>
+            </div>
+            <SheetDescription className="text-xs">
+              All transactions logged during network drops are stored with cryptographic UUID idempotency and automatic server-wins sync.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="p-4 bg-muted/40 border-b border-border/60 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 text-xs font-mono">
+              <span className="text-amber-600 font-semibold">{queueItems.filter(i => !i.synced && !i.failed).length} Pending</span>
+              <span>•</span>
+              <span className="text-emerald-600 font-semibold">{queueItems.filter(i => i.synced).length} Synced</span>
+              {queueItems.filter(i => i.failed).length > 0 && (
+                <>
+                  <span>•</span>
+                  <span className="text-red-600 font-semibold">{queueItems.filter(i => i.failed).length} Failed</span>
+                </>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={clearSyncedEntriesHandler}
+                className="h-7 text-xs gap-1"
+                disabled={queueItems.filter(i => i.synced).length === 0}
+              >
+                <Trash2 className="h-3 w-3" /> Clear
+              </Button>
+              <Button
+                size="sm"
+                onClick={syncOfflineQueue}
+                disabled={isSyncing || !isOnline || queueItems.filter(i => !i.synced && !i.failed).length === 0}
+                className="h-7 text-xs gap-1"
+              >
+                <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin" : ""}`} />
+                {isSyncing ? "Syncing..." : "Sync Now"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {queueItems.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground text-xs font-mono">
+                <CheckCircle2 className="h-8 w-8 text-emerald-500/60 mx-auto mb-2" />
+                Queue is completely clear. No pending offline transactions.
+              </div>
+            ) : (
+              queueItems.map((item) => (
+                <div
+                  key={item.idempotencyKey}
+                  className="rounded-lg border border-border/70 p-3 bg-card space-y-2 text-xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-semibold text-[11px] px-2 py-0.5 rounded bg-muted">
+                      {item.actionType || item.entryType}
+                    </span>
+                    {item.synced ? (
+                      <Badge variant="outline" className="text-[10px] text-emerald-700 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40">
+                        <CheckCircle2 className="h-2.5 w-2.5 mr-1" /> SYNCED
+                      </Badge>
+                    ) : item.failed ? (
+                      <Badge variant="destructive" className="text-[10px]">
+                        <XCircle className="h-2.5 w-2.5 mr-1" /> FAILED
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 dark:bg-amber-950/40">
+                        <Clock className="h-2.5 w-2.5 mr-1" /> PENDING
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="text-muted-foreground font-mono text-[11px]">
+                    Time: {new Date(item.timestamp).toLocaleTimeString()} • {new Date(item.timestamp).toLocaleDateString()}
+                  </div>
+
+                  {item.notes && (
+                    <div className="text-foreground font-medium text-xs">
+                      {item.notes}
+                    </div>
+                  )}
+
+                  {item.failed && item.failReason && (
+                    <div className="text-destructive font-mono text-[11px] bg-red-50 dark:bg-red-950/30 p-2 rounded border border-red-200 dark:border-red-900">
+                      Reason: {item.failReason}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[10px] text-muted-foreground font-mono">
+                    <span>UUID: {item.idempotencyKey.slice(0, 8)}...</span>
+                    {item.failed && (
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDismissFailed(item.idempotencyKey)}
+                          className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-destructive"
+                        >
+                          Dismiss
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRetryFailed(item.idempotencyKey)}
+                          className="h-6 px-2 text-[10px] gap-1"
+                        >
+                          <RotateCcw className="h-2.5 w-2.5" /> Retry
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* EMERGENCY MANUAL PASS DIALOG */}
+      <Dialog open={manualPassOpen} onOpenChange={setManualPassOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              Emergency Manual Gate Pass
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Issue an urgent manual pass during network outage or for unscheduled visitors. Saves locally if offline and syncs automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs">Visitor Full Name *</Label>
+              <Input
+                placeholder="e.g. Rahul Sharma"
+                value={manualPassForm.name}
+                onChange={(e) => setManualPassForm(f => ({ ...f, name: e.target.value }))}
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Phone Number *</Label>
+              <Input
+                placeholder="e.g. 9876543210"
+                value={manualPassForm.phone}
+                onChange={(e) => setManualPassForm(f => ({ ...f, phone: e.target.value }))}
+                className="h-9 text-xs font-mono"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Destination Unit *</Label>
+                <Select
+                  value={manualPassForm.unitId}
+                  onValueChange={(val) => setManualPassForm(f => ({ ...f, unitId: val }))}
+                >
+                  <SelectTrigger className="h-9 text-xs font-mono">
+                    <SelectValue placeholder="Select Flat" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-56">
+                    {unitList.map((u) => (
+                      <SelectItem key={u.id} value={u.id} className="text-xs font-mono">
+                        Flat {u.number}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs">Purpose</Label>
+                <Select
+                  value={manualPassForm.purpose}
+                  onValueChange={(val) => setManualPassForm(f => ({ ...f, purpose: val }))}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Delivery / Service" className="text-xs">Delivery / Service</SelectItem>
+                    <SelectItem value="Guest / Family" className="text-xs">Guest / Family</SelectItem>
+                    <SelectItem value="Maintenance / Repair" className="text-xs">Maintenance / Repair</SelectItem>
+                    <SelectItem value="Emergency / Medical" className="text-xs">Emergency / Medical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Vehicle Number (Optional)</Label>
+              <Input
+                placeholder="e.g. MH12AB1234"
+                value={manualPassForm.vehicleNumber}
+                onChange={(e) => setManualPassForm(f => ({ ...f, vehicleNumber: e.target.value.toUpperCase() }))}
+                className="h-9 text-xs font-mono uppercase"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Guard Notes</Label>
+              <Input
+                placeholder="e.g. Verified Aadhaar card / Amazon package delivery"
+                value={manualPassForm.notes}
+                onChange={(e) => setManualPassForm(f => ({ ...f, notes: e.target.value }))}
+                className="h-9 text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setManualPassOpen(false)}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={submitManualPass}
+              disabled={isSubmittingPass}
+              className="text-xs font-semibold"
+            >
+              {isSubmittingPass ? "Logging Pass..." : "Authorize Entry"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

@@ -10,10 +10,12 @@ export function StatusBadge({ status }: { status: string }) {
     CLOSED: "bg-emerald-500",
 
     PENDING: "bg-amber-500",
+    PENDING_PAYMENT: "bg-amber-500",
     AT_GATE: "bg-amber-500",
     ASSIGNED: "bg-amber-500",
     PARTIAL: "bg-amber-500",
     ACKNOWLEDGED: "bg-amber-500",
+    REFUNDED: "bg-purple-500",
 
     OVERDUE: "bg-red-500",
     REJECTED: "bg-red-500",

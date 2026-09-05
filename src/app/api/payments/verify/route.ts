@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { payments, bills, notifications } from "@/lib/db/schema";
+import { payments, bills, notifications, bookings } from "@/lib/db/schema";
 import { requireAuthAndSociety } from "@/lib/api-helpers";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
@@ -38,7 +38,11 @@ export async function POST(req: Request) {
     }
 
     const result = await withTenant(societyId, sess.userId, async (tx) => {
-      const [payment] = await tx.select().from(payments).where(and(eq(payments.gatewayRef, razorpay_order_id), eq(payments.societyId, societyId)));
+      const [payment] = await tx
+        .select()
+        .from(payments)
+        .where(and(eq(payments.gatewayRef, razorpay_order_id), eq(payments.societyId, societyId)))
+        .for("update");
       if (!payment) throw new Error("Payment not found");
       if (paymentId && payment.id !== paymentId) throw new Error("Mismatched payment");
       if (payment.status === "SUCCESS") return { payment, bill: null, alreadySuccess: true };
@@ -74,6 +78,22 @@ export async function POST(req: Request) {
       if (newBillStatus !== bill.status) {
         const [ub] = await tx.update(bills).set({ status: newBillStatus as any }).where(eq(bills.id, bill.id)).returning();
         updatedBill = ub;
+      }
+
+      if (newBillStatus === "PAID") {
+        const [linkedBooking] = await tx.select().from(bookings).where(and(eq(bookings.billId, bill.id), eq(bookings.societyId, societyId)));
+        if (linkedBooking && linkedBooking.status === "PENDING_PAYMENT") {
+          await tx.update(bookings).set({ status: "CONFIRMED" }).where(eq(bookings.id, linkedBooking.id));
+          await tx.insert(notifications).values({
+            societyId,
+            userId: linkedBooking.userId,
+            title: `Booking confirmed! 🎉`,
+            body: `Your amenity booking has been confirmed. Pass is now active.`,
+            channel: "IN_APP",
+            relatedEntity: "booking",
+            relatedId: linkedBooking.id,
+          });
+        }
       }
 
       await tx.insert(notifications).values({
